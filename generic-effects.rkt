@@ -104,12 +104,12 @@
 (def-thunk (! firstReq t k)
   (! t % eff k (~ (λ (req responder) (! List 'op req responder)))))
 
-(def-thunk (! stateAlg init step t k)
-  (! t % eff k
+(def-thunk (! stateAlg init step t)
+  (! t % eff Ret
      (~ (λ (req responder)
           (patc (! step req init)
             [(list rsp new-state)
-             (! stateAlg new-state step (~ (! responder rsp)) k)])))))
+             (! stateAlg new-state step (~ (! responder rsp)))])))))
 
 (def-thunk (! re-handle t opHandler)
   (! handle t retE opHandler))
