@@ -1,7 +1,8 @@
 #lang fiddle
 
 (require fiddle/prelude
-         fiddle/stdlib/CoList)
+         fiddle/stdlib/CoList
+         fiddle/stdlib/Table)
 
 (define sample-input
   "abc
@@ -2142,3 +2143,31 @@ rnlsdmxuyefoz
    [(cons x c) (! parse-group-loop '() (~! cl-cons x c))]))
 
 (def-thunk (! parse inp) (! cl-unfold parse-iter (~! colist<-string inp)))
+
+
+
+
+(def-thunk (! main summarize inp)
+  (! CBN (~! parse inp)
+     % n> (~! cl-map summarize)
+     % n> (~! cl-map length)
+     % n> (~! cl-foldl^ + 0)
+     % n$))
+
+;; Listof (Listof Char) -> Listof Char
+(def-thunk (! summarize-a xs)
+  (! CBV (~! apply append xs)
+     % v> list->set
+     % v> set->list
+     % v$))
+
+(def-thunk (! summarize-b xs)
+  (! CBV (~! map table-set<-list xs)
+     % v> (~! foldl^ table-set-intersect universal-table-set)
+     % v> (~ (λ (t) (! t 'to-list)))
+     % v$)
+  )
+
+(def-thunk (! main-a) (! main summarize-a))
+(def-thunk (! main-b) (! main summarize-b))
+
