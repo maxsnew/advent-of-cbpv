@@ -7,7 +7,7 @@
 
 
 ;; Effects
-;;   @ debug (pc acc) ~> '()
+;;   @ read-instr (pc acc) ~> Instr
 
 (def-thunk (! interp-game pc acc)
   (! bindE (~! raiseE (list 'read-instr pc acc)) (~ (copat
@@ -24,7 +24,7 @@
 (def-thunk (! seen? x seen)
   (! seen 'get x #f))
 
-(def-thunk (! find-loop-tbl inp)
+(def-thunk (! find-loop inp)
   (! handle (~! interp-game 0 0)
      error ;; interp-game never returns
      (~ (copat
@@ -52,27 +52,41 @@
   [((list 'nop n)) (! List 'twiddled (list 'nop n) (list 'jmp n))]
   [(i) (! List 'same i)])
 
+(def-thunk (! handleNonDet t)
+  (! handle t
+     abort
+     (~ (copat
+         [('fail resumeK failK) (! failK)]
+         [('flip resumeK failK) (! resumeK #t (~! resumeK #f failK))]))
+     (~! error 'no-answer)))
+
+(def-thunk (! choose t1 t2)
+  (! bindE (~! raiseE 'flip)
+     (~ (copat [(#t) (! t1)]
+               [(#f) (! t2)]))))
+
 (def-thunk (! fix-loop inp)
   [len <- (! vector-length inp)]
-  (! handle (~! interp-game 0 0)
-     error
-     (~ (copat
-         [((list 'read-instr pc acc) resumeK (% twiddled (seen loopK)))
-          (cond [(! >= pc len) (! List pc acc)] ;; good job we found the answer
-                [(! seen? pc seen) (! loopK)] ;; whoops we loops, try the next one
-                [else
-                 [instr <- (! vector-ref inp pc)] [seen <- (! seen 'set pc #t)]
-                 (! resumeK instr % twiddled seen loopK)])]
-         [((list 'read-instr pc acc) resumeK (% twiddling (seen)))
-          [seen <- (! seen 'set pc #t)]
-          (patc (! idiom^ twiddle (~! vector-ref inp pc))
-                [(list 'same instr)
-                 (! resumeK instr % twiddling seen)]
-                [(list 'twiddled unflipped flipped)
-                 (! resumeK flipped % twiddled seen
-                    (~ (do (! displayall 'backtracking pc)
-                           (! resumeK unflipped % twiddling seen))))])]))
-     % twiddling empty-table))
+  (! handleNonDet
+     (~! handle (~! interp-game 0 0)
+        error
+        (~ (copat
+            [((list 'read-instr pc acc) resumeK 'twiddled seen)
+             (cond [(! >= pc len) (! retE (list pc acc))] ;; good job we found the answer
+                   [(! seen? pc seen) (! raiseE 'fail)] ;; whoops we looped, this was the wrong path
+                   [else
+                    [instr <- (! vector-ref inp pc)] [seen <- (! seen 'set pc #t)]
+                    (! resumeK instr 'twiddled seen)])]
+            [((list 'read-instr pc acc) resumeK 'twiddling seen)
+             [seen <- (! seen 'set pc #t)]
+             (patc (! idiom^ twiddle (~! vector-ref inp pc))
+                   [(list 'same instr)
+                    (! resumeK instr 'twiddling seen)]
+                   [(list 'twiddled unflipped flipped)
+                    (! choose
+                       (~! resumeK flipped 'twiddled seen)
+                       (~! resumeK unflipped 'twiddling seen))])]))
+        'twiddling empty-table)))
 
 (define! sample
   (! list->vector
@@ -734,5 +748,10 @@
        (jmp +1))))
 
 (def-thunk (! main-a)
-  (! idiom^ displayall (~! find-loop-tbl full)))
+  (! idiom^ displayall (~! find-loop full)))
+
+(def-thunk (! main-b)
+  (! idiom^ displayall (~! fix-loop full)))
+
 (! main-a)
+(! main-b)
