@@ -39,18 +39,21 @@
 
 ;; part b
 
-;; when we are trying to twiddle an instr, we just need to accumulate what
-;; pcs we've already seen.
-(define! twiddling (! new-method 'twiddling 1))
-
-;; when we have already twiddled an instr, we need to know what pcs
-;; we've seen and also need a fail kontinuation in case we detect a loop
-(define! twiddled (! new-method 'twiddled 2))
+(def-thunk (! choose t1 t2)
+  (! bindE (~! raiseE 'flip)
+     (~ (copat [(#t) (! t1)]
+               [(#f) (! t2)]))))
 
 (def/copat (! twiddle)
-  [((list 'jmp n)) (! List 'twiddled (list 'jmp n) (list 'nop n))]
-  [((list 'nop n)) (! List 'twiddled (list 'nop n) (list 'jmp n))]
-  [(i) (! List 'same i)])
+  [((list 'jmp n))
+   (! choose
+      (~! mapE (~! List 'twiddled (list 'nop n)))
+      (~! mapE (~! List 'same (list 'jmp n))))]
+  [((list 'nop n))
+   (! choose
+      (~! mapE (~! List 'twiddled (list 'jmp n)))
+      (~! mapE (~! List 'same (list 'nop n))))]
+  [(i) (! mapE (~! List 'same i))])
 
 (def-thunk (! handleNonDet t)
   (! handle t
@@ -59,11 +62,6 @@
          [('fail resumeK failK) (! failK)]
          [('flip resumeK failK) (! resumeK #t (~! resumeK #f failK))]))
      (~! error 'no-answer)))
-
-(def-thunk (! choose t1 t2)
-  (! bindE (~! raiseE 'flip)
-     (~ (copat [(#t) (! t1)]
-               [(#f) (! t2)]))))
 
 (def-thunk (! fix-loop inp)
   [len <- (! vector-length inp)]
@@ -79,13 +77,10 @@
                     (! resumeK instr 'twiddled seen)])]
             [((list 'read-instr pc acc) resumeK 'twiddling seen)
              [seen <- (! seen 'set pc #t)]
-             (patc (! idiom^ twiddle (~! vector-ref inp pc))
-                   [(list 'same instr)
-                    (! resumeK instr 'twiddling seen)]
-                   [(list 'twiddled unflipped flipped)
-                    (! choose
-                       (~! resumeK flipped 'twiddled seen)
-                       (~! resumeK unflipped 'twiddling seen))])]))
+             (! bindE (! idiom^ twiddle (~! vector-ref inp pc))
+                (~ (copat
+                    [(list 'same instr)     (! resumeK instr 'twiddling seen)]
+                    [(list 'twiddled instr) (! resumeK instr 'twiddled  seen)])))]))
         'twiddling empty-table)))
 
 (define! sample
