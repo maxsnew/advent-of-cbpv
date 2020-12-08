@@ -2,6 +2,7 @@
 
 (require fiddle/prelude
          fiddle/stdlib/CoList
+         fiddle/stdlib/Table
          "../../generic-effects.rkt")
 
 
@@ -20,9 +21,10 @@
     [pc <- (! + n pc)]
     (! interp-game pc acc)]))))
 
-(def-thunk (! seen? x seen) (! member? x (~! colist<-list seen)))
+(def-thunk (! seen? x seen)
+  (! seen 'get x #f))
 
-(def-thunk (! find-loop inp)
+(def-thunk (! find-loop-tbl inp)
   (! handle (~! interp-game 0 0)
      error ;; interp-game never returns
      (~ (copat
@@ -31,8 +33,46 @@
           (cond [(! seen? pc seen) (! List pc acc)]
                 [else
                  [instr <- (! vector-ref inp pc)]
-                 (! k instr (cons pc seen))])]))
-     '()))
+                 [seen <- (! seen 'set pc #t)]
+                 (! k instr seen)])]))
+     empty-table))
+
+;; part b
+
+;; when we are trying to twiddle an instr, we just need to accumulate what
+;; pcs we've already seen.
+(define! twiddling (! new-method 'twiddling 1))
+
+;; when we have already twiddled an instr, we need to know what pcs
+;; we've seen and also need a fail kontinuation in case we detect a loop
+(define! twiddled (! new-method 'twiddled 2))
+
+(def/copat (! twiddle)
+  [((list 'jmp n)) (! List 'twiddled (list 'jmp n) (list 'nop n))]
+  [((list 'nop n)) (! List 'twiddled (list 'nop n) (list 'jmp n))]
+  [(i) (! List 'same i)])
+
+(def-thunk (! fix-loop inp)
+  [len <- (! vector-length inp)]
+  (! handle (~! interp-game 0 0)
+     error
+     (~ (copat
+         [((list 'read-instr pc acc) resumeK (% twiddled (seen loopK)))
+          (cond [(! >= pc len) (! List pc acc)] ;; good job we found the answer
+                [(! seen? pc seen) (! loopK)] ;; whoops we loops, try the next one
+                [else
+                 [instr <- (! vector-ref inp pc)] [seen <- (! seen 'set pc #t)]
+                 (! resumeK instr % twiddled seen loopK)])]
+         [((list 'read-instr pc acc) resumeK (% twiddling (seen)))
+          [seen <- (! seen 'set pc #t)]
+          (patc (! idiom^ twiddle (~! vector-ref inp pc))
+                [(list 'same instr)
+                 (! resumeK instr % twiddling seen)]
+                [(list 'twiddled unflipped flipped)
+                 (! resumeK flipped % twiddled seen
+                    (~ (do (! displayall 'backtracking pc)
+                           (! resumeK unflipped % twiddling seen))))])]))
+     % twiddling empty-table))
 
 (define! sample
   (! list->vector
@@ -694,4 +734,5 @@
        (jmp +1))))
 
 (def-thunk (! main-a)
-  (! idiom^ displayall (~! find-loop full)))
+  (! idiom^ displayall (~! find-loop-tbl full)))
+(! main-a)
