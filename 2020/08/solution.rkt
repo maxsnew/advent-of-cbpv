@@ -2,8 +2,8 @@
 
 (require fiddle/prelude
          fiddle/stdlib/CoList
-         fiddle/stdlib/Table
-         "../../generic-effects.rkt")
+         fiddle/stdlib/Eff
+         fiddle/stdlib/Table)
 
 
 ;; Effects

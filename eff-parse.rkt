@@ -2,8 +2,7 @@
 
 (require fiddle/prelude
          fiddle/stdlib/CoList
-
-         "generic-effects.rkt")
+         fiddle/stdlib/Eff)
 
 (provide failp choosep
          exactp matches?p manyp betweenp

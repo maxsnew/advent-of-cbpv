@@ -1,7 +1,7 @@
 #lang fiddle
 
 (require fiddle/prelude
-         "../../generic-effects.rkt"
+         fiddle/stdlib/Eff
          "../../eff-parse.rkt")
 
 (provide inputp linep)
