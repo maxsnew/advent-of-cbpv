@@ -16,6 +16,16 @@ faded blue bags contain no other bags.
 dotted black bags contain no other bags.
 ")
 
+(define sample2
+  "shiny gold bags contain 2 dark red bags.
+dark red bags contain 2 dark orange bags.
+dark orange bags contain 2 dark yellow bags.
+dark yellow bags contain 2 dark green bags.
+dark green bags contain 2 dark blue bags.
+dark blue bags contain 2 dark violet bags.
+dark violet bags contain no other bags.
+")
+
 (define full
   "dotted blue bags contain 3 wavy bronze bags, 5 clear tomato bags.
 mirrored brown bags contain 1 pale teal bag, 3 muted gray bags, 3 dark bronze bags.
@@ -682,6 +692,21 @@ wavy black bags contain 4 dotted indigo bags, 1 light tan bag, 5 bright cyan bag
   ; (! idiom^ displayall (~! tbl 'to-list))
   (! idiom^ length (~! reachable tbl (list "shiny" "gold"))))
 
+;; surprisingly I don't even need to memoize this!
+(def-thunk (! num-contains contains-tbl bag)
+  (! displayall 'num-contains bag)
+  [children <- (! contains-tbl 'get bag '())]
+  (! CBN (~! colist<-list children)
+     % n> (~! cl-map (~ (copat [((list num child))
+                                (! <<v * num 'o + 1 'o num-contains contains-tbl child)])))
+     ;; % n> (~! cl-map debug)
+     % n> (~! cl-foldl^ + 0)
+     % n$))
+
 (def-thunk (! main-b inp)
   [tbl <- (! idiom^ contains-tbl (~! parse-inp inp))]
-  (! idiom^ displayall (~! tbl 'to-list)))
+  ;; (! idiom^ displayall (~! tbl 'to-list))
+  (! num-contains tbl (list "shiny" "gold")))
+
+(! main-a full)
+(! main-b full)
