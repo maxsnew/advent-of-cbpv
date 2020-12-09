@@ -25,7 +25,6 @@
 
 ;; Listof Nat -> State
 (def-thunk (! initial-state xs)
-  (! displayall 'initial-state xs)
   (! foldl xs (~! swap insert) '()))
 
 (def-thunk (! valid-next? x state)
@@ -47,6 +46,33 @@
    [init <- (! initial-state preamble)]
    ;; step : Nat -> U(State -> F Nat) -> State -> F Nat
    (! cl-foldr tl xmas-step error init)]))
+
+(def-thunk (! get-below goal sum ls)
+  (cond [(! <= sum goal) (ret (list sum ls))]
+        [else
+         (pat ls
+           [(cons x ls)
+            [sum <- (! - sum x)]
+            (! get-below goal sum ls)]
+           )]))
+
+(def-thunk (! find-sum goal next resume sum ls)
+  ;; (! displayall 'find-sum goal next sum ls)
+  [new-sum <- (! + next sum)]
+  [ls <- (! append ls (list next))]
+  (patc (! get-below goal new-sum ls) [(list sum ls)
+   (cond [(! = sum goal) (ret ls)]
+         [else (! resume sum ls)])]))
+
+(def-thunk (! main-b window-size ls)
+  [goal <- (! main-a window-size ls)]
+  (! displayall 'goal: goal)
+  [nums <- (! cl-foldr (~! colist<-list ls) (~! find-sum goal) error 0 '())]
+  [min <- (! minimum (~! colist<-list nums))]
+  [max <- (! maximum (~! colist<-list nums))]
+  (! displayall 'min: min)
+  (! displayall 'max: max)
+  (! + min max))
 
 (define sample0
   '(25 (20 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 21 22 23 24 25 65)))
