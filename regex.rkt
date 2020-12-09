@@ -98,6 +98,20 @@
   [((list 'star e))
    (! idiom^ cat2 (~! Deriv c e) (~ (ret (list 'star e))))])
 
+(def-thunk (! num<-digits base ds)
+  (! cl-foldl (~! colist<-list ds)
+     (~ (copat [(acc x)
+               (! idiom^ (~! + x) (~! * base acc))]))
+     0))
+(def/copat (! parse-num base)
+  [((cons #\+ ds)) (! parse-num base ds)]
+  [((cons #\- ds)) (! <<v * -1 'o parse-num base ds)]
+  [(ds)
+   (! CBN (~! colist<-list ds)
+      % n> (~! cl-map (~! <<v swap - 48 'o char->integer))
+      % n> (~! cl-foldl^ (~ (copat [(acc x) (! idiom^ (~! + x) (~! * 10 acc))])) 0)
+      % n$)])
+
 ;; matches? : ParseExp Tok Tree -> Listof Tok -> F Bool
 (def/copat (! matches?)
   [(e '()) (! null-accepting? e)]
@@ -149,16 +163,163 @@
                              (! idiom^ (~! List state accepting?) (~! transition 'to-list))])))
           (~! tbl 'to-list)))])
 
+(def-thunk (! dfa-accepts-null? (list state tbl))
+  (pat state
+       ['empty (ret #f)]
+       [_
+        (cond [(! tbl 'has-key? state) (! idiom^ first (~! tbl 'get state 'error))]
+              [else (! error 'dfa-doesnt-have-this-state)])]))
+
+(def/copat (! dfa-Deriv c)
+  [((list state tbl))
+   (patc (! tbl 'get state #f) [(list accepts-null? trans-tbl)
+    (cond [(! trans-tbl 'has-key? c) [state <- (! trans-tbl 'get c #f)]
+           (! List state tbl)]
+          [else (! List 'empty tbl)])])])
+
+(def/copat (! empty-dfa?)
+  [((list 'empty _)) (ret #t)]
+  [(_)               (ret #f)])
+
+(def/copat (! dfa-matches? dfa)
+  [('()) (! dfa-accepts-null? dfa)]
+  [((cons c cs))
+   [ddfa/dc <- (! dfa-Deriv c dfa)]
+   (cond [(! empty-dfa? ddfa/dc) (ret #f)]
+         [else (! dfa-matches? ddfa/dc cs)])])
+
+;; (def/copat (! long-match-loop dfa full-buf failK since-buf)
+;;   [('())
+;;    (! idiom^ failK (~! reverse since-buf))]
+;;   [((cons c cs))
+;;    [dfa <- (! dfa-Deriv c dfa)]
+;;    (cond [(! dfa-accepts-null? dfa)
+;;           [full-buf = (cons c full-buf)]
+;;           [match <- (! reverse full-buf)]
+;;           (! long-match-loop dfa full-buf (~! List match) '() cs)]
+;;          [(! empty-dfa? dfa)
+;;           [not-matched <- (! idiom^ append (~! reverse since-buf) (~! Cons c cs))]
+;;           (! failK not-matched)]
+;;          [else
+;;           (! long-match-loop dfa (cons c full-buf) failK (cons c since-buf) cs)])])
+
+(def-thunk (! long-match-loop dfa full-buf failK since-buf cs)
+  (patc (! idiom^ view cs)
+   ['()
+    [since-buf <- (! reverse since-buf)]
+    (! failK (~! colist<-list since-buf))]
+   [(cons c cs)
+    [dfa <- (! dfa-Deriv c dfa)]
+    (cond [(! dfa-accepts-null? dfa)
+           [full-buf = (cons c full-buf)]
+           [match <- (! reverse full-buf)]
+           (! long-match-loop dfa full-buf (~! List match) '() cs)]
+          [(! empty-dfa? dfa)
+           [not-matched = (~! cl-append (~! idiom^ colist<-list (~! reverse (cons c since-buf))) cs)]
+           (! failK not-matched)]
+          [else
+           (! long-match-loop dfa (cons c full-buf) failK (cons c since-buf) cs)])]))
+
+(def-thunk (! dfa-longest-match dfa s)
+  [init-k <- (cond [(! dfa-accepts-null? dfa) (ret (~! List '()))]
+                   [else (ret (~! abort 'no-match))])]
+  (! long-match-loop dfa '() init-k '() s))
+
+(def-thunk (! dfa-vec-Deriv c dfas)
+  [car*deriv = (~ (copat [((list f dfa)) (! idiom^ (~! List f) (~! dfa-Deriv c dfa))]))]
+  (! idiom^ (~! filter (~! <<v not 'o equal? 'empty 'o second)) (~! map car*deriv dfas)))
+
+(def-thunk (! first-null-acceptor dfas)
+  (patc (! idiom^ view (~! cl-filter (~! <<v dfa-accepts-null? 'o second) (~! colist<-list dfas)))
+    ['()        (ret #f)]
+    [(cons x _)
+     ; (! displayall 'first-null-acceptor x)
+     (ret x)]))
+
+(def-thunk (! vec-long-match-loop dfas full-buf failK since-buf cs)
+  ; (! displayall 'loop dfas full-buf failK since-buf cs)
+  (patc (! idiom^ view cs)
+   ['()
+    [since-buf <- (! reverse since-buf)]
+    (! failK (~! colist<-list since-buf))]
+   [(cons c cs)
+    ; (! displayall 'cons c)
+    [dfas <- (! dfa-vec-Deriv c dfas)]
+    ; (! displayall 'derivatives dfas)
+    (patc (! first-null-acceptor dfas)
+      [(list accept dfa)
+       ; (! displayall 'acceptor)
+       [full-buf = (cons c full-buf)]
+       [match <- (! idiom^ accept (~! reverse full-buf))]
+       (! vec-long-match-loop dfas full-buf (~! List match) '() cs)]
+      [#f
+       ; (! displayall 'none-accept)
+       (cond [(! null? dfas)
+              ; (! displayall 'finally)
+              [not-matched = (~! cl-append (~! idiom^ colist<-list (~! reverse (cons c since-buf))) cs)]
+              (! failK not-matched)]
+             [else
+              ; (! displayall 'still-hope dfas)
+              (! vec-long-match-loop dfas (cons c full-buf) failK (cons c since-buf) cs)])])]))
+
+;; Lexing time
+
+;; A lexSignature iTok oTok (aka LexSig) is a Listof (List (U (Listof iTok -> F oTok)) DFA)
+
+;; lex : LexSig iTok oTok -> U(CoList iTok) -> F((List oTok U(CoList iTok)) \/ 'no-match)
+(def-thunk (! lex sig itoks)
+  [init-k <- (patc (! first-null-acceptor sig)
+    [(list accept _)
+     [match <- (! accept '())]
+     (ret (~! List match))]
+    [#f (ret (~! abort 'no-match))])]
+  (! vec-long-match-loop sig '() init-k '() itoks))
+
 ;; number
-(define! digits
-  (! idiom^ star/e (~! char/e "0123456789")))
+;; (define! 3digits
+;;   (! idiom^ compile-regex (~! idiom^ cat/e  (~! char/e "0123456789") (~! char/e "0123456789") (~! char/e "0123456789"))))
 
-(define! astar
-  (! idiom^ star/e (~! char/e "a")))
-(define! bstar
-  (! idiom^ star/e (~! char/e "b")))
-(define! astarbstar
-  (! cat/e astar bstar))
+(define! digit/e (! idiom^ star/e (~! char/e "0123456789")))
+;; (define! astar
+;;   (! idiom^ compile-regex (~! idiom^ star/e (~! char/e "a"))))
+;; (define! bstar
+;;   (! idiom^ compile-regex (~! idiom^ star/e (~! char/e "b"))))
+;; (define! astarbstar
+;;   (! idiom^ compile-regex (~! idiom^ cat/e (~! idiom^ star/e (~! char/e "a")) (~! idiom^ star/e (~! char/e "b")))))
 
-(define! abstar
-  (! idiom^ star/e (~! idiom^ cat/e (~! char/e "a") (~! char/e "b"))))
+;; (define! abstar
+;;   (! idiom^ compile-regex (~! idiom^ star/e (~! idiom^ cat/e (~! char/e "a") (~! char/e "b")))))
+(define parse-decimal (~! parse-num 10))
+(define parse-binary  (~! parse-num 2))
+(define! number/e   (! idiom^ (~! swap cat/e digit/e) (~! char/e "+-")))
+(define! number/lex (! idiom^ (~! List parse-decimal) (~! compile-regex number/e)))
+(define! bin/e   (! idiom^ cat/e (~! char/e "+-") (~! idiom^ star/e (~! char/e "01"))))
+(define! bin/lex (! idiom^ (~! List parse-binary) (~! compile-regex bin/e)))
+
+(def-thunk (! string<-char c) (! list->string (list c)))
+(def-thunk (! exact-string/e s)
+  [cs <- (! <<v map char/e 'o map string<-char 'o string->list s)]
+  (! apply cat/e cs))
+
+(def/copat (! exact-string/lex s)
+  [(#:bind) (! exact-string/lex s s)]
+  [(val #:bind)
+   [dfa <- (! idiom^ compile-regex (~! exact-string/e s))]
+   (! List (~! abort val) dfa)])
+
+(provide
+ ;; regex stuff
+ cat/e alt/e
+ char/e
+ star/e
+ digit/e
+ number/e
+ bin/e
+ exact-string/e
+
+ compile-regex
+
+ ;; lexing stuff
+ lex
+ bin/lex number/lex
+ exact-string/lex)
