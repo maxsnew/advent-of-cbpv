@@ -70,6 +70,13 @@
   [('empty)   (ret 'epsilon)]
   [('epsilon) (ret 'epsilon)]
   [(e) (ret (list 'star e))])
+(define */e star/e)
+
+(def-thunk (! +/e e)
+  (! idiom^ (~! cat/e e) (~! star/e e)))
+
+(def-thunk (! ?/e e)
+  (! alt/e 'epsilon e))
 
 (def/copat (! null-accepting?)
   [('empty)   (ret #f)]
@@ -109,7 +116,7 @@
   [(ds)
    (! CBN (~! colist<-list ds)
       % n> (~! cl-map (~! <<v swap - 48 'o char->integer))
-      % n> (~! cl-foldl^ (~ (copat [(acc x) (! idiom^ (~! + x) (~! * 10 acc))])) 0)
+      % n> (~! cl-foldl^ (~ (copat [(acc x) (! idiom^ (~! + x) (~! * base acc))])) 0)
       % n$)])
 
 ;; matches? : ParseExp Tok Tree -> Listof Tok -> F Bool
@@ -279,7 +286,7 @@
 ;; (define! 3digits
 ;;   (! idiom^ compile-regex (~! idiom^ cat/e  (~! char/e "0123456789") (~! char/e "0123456789") (~! char/e "0123456789"))))
 
-(define! digit/e (! idiom^ star/e (~! char/e "0123456789")))
+(define! digit/e (! char/e "0123456789"))
 ;; (define! astar
 ;;   (! idiom^ compile-regex (~! idiom^ star/e (~! char/e "a"))))
 ;; (define! bstar
@@ -291,9 +298,11 @@
 ;;   (! idiom^ compile-regex (~! idiom^ star/e (~! idiom^ cat/e (~! char/e "a") (~! char/e "b")))))
 (define parse-decimal (~! parse-num 10))
 (define parse-binary  (~! parse-num 2))
-(define! number/e   (! idiom^ (~! swap cat/e digit/e) (~! char/e "+-")))
+(define! number/e   (! idiom^ cat/e
+                       (~! idiom^ ?/e (~! char/e "+-"))
+                       (~! +/e digit/e)))
 (define! number/lex (! idiom^ (~! List parse-decimal) (~! compile-regex number/e)))
-(define! bin/e   (! idiom^ cat/e (~! char/e "+-") (~! idiom^ star/e (~! char/e "01"))))
+(define! bin/e   (! idiom^ cat/e (~! idiom^ ?/e (~! char/e "+-")) (~! idiom^ +/e (~! char/e "01"))))
 (define! bin/lex (! idiom^ (~! List parse-binary) (~! compile-regex bin/e)))
 
 (def-thunk (! string<-char c) (! list->string (list c)))
@@ -307,11 +316,25 @@
    [dfa <- (! idiom^ compile-regex (~! exact-string/e s))]
    (! List (~! abort val) dfa)])
 
+(def-thunk (! fold-lex sig c)
+  [step = (~ (λ (cs)
+              (patc (! idiom^ view cs)
+               ['() (! cl-nil)]
+               [(cons c cs)
+                (patc (! lex sig (~! cl-cons c cs))
+                 ['no-match
+                  [l <- (! list<-colist (~! cl-cons c cs))]
+                  (! error "lexer didn't match anything" sig l)]
+                 [(list otok cs)
+                  (! Cons otok cs)])])))]
+  (! cl-unfold step c))
+
 (provide
  ;; regex stuff
  cat/e alt/e
  char/e
- star/e
+ star/e */e
+ +/e ?/e
  digit/e
  number/e
  bin/e
@@ -320,6 +343,6 @@
  compile-regex
 
  ;; lexing stuff
- lex
+ lex fold-lex
  bin/lex number/lex
  exact-string/lex)
