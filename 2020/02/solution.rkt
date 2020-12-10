@@ -3,8 +3,10 @@
 (require fiddle/prelude
          fiddle/stdlib/CoList
 
-         "../../eff-parse.rkt"
-         "parser.rkt")
+         ;; "../../eff-parse.rkt"
+         ;; "parser.rkt"
+         "regex-parser.rkt"
+         )
 
 ;; A policy is
 ;; (list 'policy Range Letter)
@@ -2063,13 +2065,19 @@
 (def/copat (! unyes)
   [((list 'yes x)) (ret x)])
 
-;; (! <<v
+
+;; (def-thunk (! parse s)
+;;   (! <<v
 ;;    map (~! <<v unyes 'o firstParseAll linep) 'o
 ;;    lines 'o
-;;    string->list full-input)
+;;    string->list s))
+
 
 (def-thunk (! part-a)
   (! count-valid-passwords valid-password-a (~! colist<-list parsed-input)))
 
 (def-thunk (! part-b)
   (! count-valid-passwords valid-password-b (~! colist<-list parsed-input)))
+
+;; (! displayall 'parsing-now)
+;; (! parse full-input)

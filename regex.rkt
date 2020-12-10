@@ -302,6 +302,9 @@
                        (~! idiom^ ?/e (~! char/e "+-"))
                        (~! +/e digit/e)))
 (define! number/lex (! idiom^ (~! List parse-decimal) (~! compile-regex number/e)))
+
+(define! unsigned-number/lex (! idiom^ (~! List parse-decimal) (~! idiom^ compile-regex (~! +/e digit/e))))
+
 (define! bin/e   (! idiom^ cat/e (~! idiom^ ?/e (~! char/e "+-")) (~! idiom^ +/e (~! char/e "01"))))
 (define! bin/lex (! idiom^ (~! List parse-binary) (~! compile-regex bin/e)))
 
@@ -344,5 +347,8 @@
 
  ;; lexing stuff
  lex fold-lex
- bin/lex number/lex
+ bin/lex
+ number/lex
+ unsigned-number/lex
  exact-string/lex)
+(! displayall 'end-of-regex.rkt)
