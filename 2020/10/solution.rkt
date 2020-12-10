@@ -75,15 +75,16 @@
 ;; valid-chains
 (def-thunk (! valid-chains goal l)
   [hugenum <- (! + goal 7)]
-  (! foldl l
-     (~ (copat
-         [((list (list count3 num3) (list count2 num2) (list count1 num1)) num0)
-          [count0 <- (! idiom^ + (~! counts-with-gap num0 num3 count3)
-                        (~! counts-with-gap num0 num2 count2)
-                        (~! counts-with-gap num0 num1 count1))]
-          (! displayall 'count0: num0 count0)
-          (ret (list (list count2 num2) (list count1 num1) (list count0 num0)))]))
-     (list (list 0 hugenum) (list 0 hugenum) (list 1 goal))))
+  [final <- (! foldl l
+       (~ (copat
+           [((list (list count3 num3) (list count2 num2) (list count1 num1)) num0)
+            [count0 <- (! idiom^ + (~! counts-with-gap num0 num3 count3)
+                          (~! counts-with-gap num0 num2 count2)
+                          (~! counts-with-gap num0 num1 count1))]
+            ;; (! displayall 'count0: num0 count0)
+            (ret (list (list count2 num2) (list count1 num1) (list count0 num0)))]))
+       (list (list 0 hugenum) (list 0 hugenum) (list 1 goal)))]
+  (! <<v first 'o third final))
 
 (def-thunk (! main-b f)
   [inp <- (! <<v swap sort > 'o list<-colist (~! parse-file f))]
@@ -111,4 +112,5 @@
   (! valid-chains goal inp)
   )
 
-;; (! <<v displayall 'o main-b "full.txt")
+(! <<v displayall 'o main-a "full.txt")
+(! <<v displayall 'o fast-main-b "full.txt")
