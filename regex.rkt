@@ -210,22 +210,22 @@
 ;;          [else
 ;;           (! long-match-loop dfa (cons c full-buf) failK (cons c since-buf) cs)])])
 
-(def-thunk (! long-match-loop dfa full-buf failK since-buf cs)
+(def-thunk (! long-match-loop accept dfa full-buf failK since-buf cs)
   (patc (! idiom^ view cs)
    ['()
     [since-buf <- (! reverse since-buf)]
     (! failK (~! colist<-list since-buf))]
    [(cons c cs)
     [dfa <- (! dfa-Deriv c dfa)]
-    (cond [(! dfa-accepts-null? dfa)
-           [full-buf = (cons c full-buf)]
-           [match <- (! reverse full-buf)]
-           (! long-match-loop dfa full-buf (~! List match) '() cs)]
-          [(! empty-dfa? dfa)
+    (cond [(! empty-dfa? dfa)
            [not-matched = (~! cl-append (~! idiom^ colist<-list (~! reverse (cons c since-buf))) cs)]
            (! failK not-matched)]
+          [(! dfa-accepts-null? dfa)
+           [full-buf = (cons c full-buf)]
+           [match <- (! <<v accept 'o reverse full-buf)]
+           (! long-match-loop accept dfa full-buf (~! List match) '() cs)]
           [else
-           (! long-match-loop dfa (cons c full-buf) failK (cons c since-buf) cs)])]))
+           (! long-match-loop accept dfa (cons c full-buf) failK (cons c since-buf) cs)])]))
 
 (def-thunk (! dfa-longest-match dfa s)
   [init-k <- (cond [(! dfa-accepts-null? dfa) (ret (~! List '()))]
@@ -245,29 +245,30 @@
 
 (def-thunk (! vec-long-match-loop dfas full-buf failK since-buf cs)
   ;; (! displayall 'loop dfas full-buf failK since-buf cs)
-  (patc (! idiom^ view cs)
-   ['()
-    [since-buf <- (! reverse since-buf)]
-    (! failK (~! colist<-list since-buf))]
-   [(cons c cs)
-    ; (! displayall 'cons c)
-    [dfas <- (! dfa-vec-Deriv c dfas)]
-    ; (! displayall 'derivatives dfas)
-    (patc (! first-null-acceptor dfas)
-      [(list accept dfa)
-       ; (! displayall 'acceptor)
-       [full-buf = (cons c full-buf)]
-       [match <- (! idiom^ accept (~! reverse full-buf))]
-       (! vec-long-match-loop dfas full-buf (~! List match) '() cs)]
-      [#f
-       ; (! displayall 'none-accept)
-       (cond [(! null? dfas)
-              ; (! displayall 'finally)
-              [not-matched = (~! cl-append (~! idiom^ colist<-list (~! reverse (cons c since-buf))) cs)]
-              (! failK not-matched)]
-             [else
-              ; (! displayall 'still-hope dfas)
-              (! vec-long-match-loop dfas (cons c full-buf) failK (cons c since-buf) cs)])])]))
+  (cond [(! <<v null? 'o cdr dfas)
+         (patc (! car dfas)
+              [(list accept dfa)
+               (! long-match-loop accept dfa full-buf failK since-buf cs)])]
+        [else
+         (patc (! idiom^ view cs)
+               ['()
+                [since-buf <- (! reverse since-buf)]
+                (! failK (~! colist<-list since-buf))]
+               [(cons c cs)
+                ; (! displayall 'cons c)
+                [dfas <- (! dfa-vec-Deriv c dfas)]
+                ; (! displayall 'derivatives dfas)
+                (cond [(! null? dfas)
+                       [not-matched = (~! cl-append (~! idiom^ colist<-list (~! reverse (cons c since-buf))) cs)]
+                       (! failK not-matched)]
+                      [else
+                       (patc (! first-null-acceptor dfas)
+                             [(list accept dfa)
+                              ; (! displayall 'acceptor)
+                              [full-buf = (cons c full-buf)]
+                              [match <- (! idiom^ accept (~! reverse full-buf))]
+                              (! vec-long-match-loop dfas full-buf (~! List match) '() cs)]
+                             [#f (! vec-long-match-loop dfas (cons c full-buf) failK (cons c since-buf) cs)])])])]))
 
 ;; Lexing time
 
