@@ -234,7 +234,7 @@
 
 (def-thunk (! dfa-vec-Deriv c dfas)
   [car*deriv = (~ (copat [((list f dfa)) (! idiom^ (~! List f) (~! dfa-Deriv c dfa))]))]
-  (! idiom^ (~! filter (~! <<v not 'o equal? 'empty 'o second)) (~! map car*deriv dfas)))
+  (! idiom^ (~! filter (~! <<v not 'o equal? 'empty 'o first 'o  second)) (~! map car*deriv dfas)))
 
 (def-thunk (! first-null-acceptor dfas)
   (patc (! idiom^ view (~! cl-filter (~! <<v dfa-accepts-null? 'o second) (~! colist<-list dfas)))
@@ -244,7 +244,7 @@
      (ret x)]))
 
 (def-thunk (! vec-long-match-loop dfas full-buf failK since-buf cs)
-  ; (! displayall 'loop dfas full-buf failK since-buf cs)
+  ;; (! displayall 'loop dfas full-buf failK since-buf cs)
   (patc (! idiom^ view cs)
    ['()
     [since-buf <- (! reverse since-buf)]
