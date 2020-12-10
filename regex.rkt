@@ -222,8 +222,9 @@
            (! failK not-matched)]
           [(! dfa-accepts-null? dfa)
            [full-buf = (cons c full-buf)]
-           [match <- (! <<v accept 'o reverse full-buf)]
-           (! long-match-loop accept dfa full-buf (~! List match) '() cs)]
+           (! long-match-loop accept dfa full-buf
+              (~ (do [match <- (! <<v accept 'o reverse full-buf)] (! List match)))
+              '() cs)]
           [else
            (! long-match-loop accept dfa (cons c full-buf) failK (cons c since-buf) cs)])]))
 
@@ -266,8 +267,10 @@
                              [(list accept dfa)
                               ; (! displayall 'acceptor)
                               [full-buf = (cons c full-buf)]
-                              [match <- (! idiom^ accept (~! reverse full-buf))]
-                              (! vec-long-match-loop dfas full-buf (~! List match) '() cs)]
+                              (! vec-long-match-loop dfas full-buf
+                                 (~ (do [match <- (! idiom^ accept (~! reverse full-buf))]
+                                        (! List match)))
+                                 '() cs)]
                              [#f (! vec-long-match-loop dfas (cons c full-buf) failK (cons c since-buf) cs)])])])]))
 
 ;; Lexing time
@@ -282,6 +285,37 @@
      (ret (~! List match))]
     [#f (ret (~! abort 'no-match))])]
   (! vec-long-match-loop sig '() init-k '() itoks))
+
+(def-thunk (! lex-string-loop s best i-cur dfas)
+  [l <- (! string-length s)]
+  (cond [(! = i-cur l)
+         (ret best)]
+        [else
+         [c <- (! string-ref s i-cur)]
+         [dfas <- (! dfa-vec-Deriv c dfas)]
+         (cond [(! null? dfas) (ret best)]
+               [else
+                [i-cur <- (! + 1 i-cur)]
+                [best <- (patc (! first-null-acceptor dfas)
+                           [(list accept dfa) (ret (list accept i-cur))]
+                           [#f                (ret best)])]
+                (! lex-string-loop s best i-cur dfas)])]))
+
+(def-thunk (! lex-string sig ix s)
+  (! lex-string-loop s 'no-match ix sig))
+
+(def-thunk (! fold-lex-string sig s)
+  [len <- (! string-length s)]
+  [step = (~ (λ (ix)
+               (cond [(! = len ix) (! cl-nil)]
+                     [else
+                      [c <- (! string-ref s ix)]
+                      (patc (! lex-string sig ix s)
+                        ['no-match (! error "fold-lex-string: didn't match anything" sig ix s)]
+                        [(list accept end-best)
+                         [otok <- (! <<v accept 'o string->list 'o substring s ix end-best)]
+                         (! Cons otok end-best)])])))]
+  (! cl-unfold step 0))
 
 ;; number
 ;; (define! 3digits
@@ -348,6 +382,7 @@
 
  ;; lexing stuff
  lex fold-lex
+ fold-lex-string
  bin/lex
  number/lex
  unsigned-number/lex
