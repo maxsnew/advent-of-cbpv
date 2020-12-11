@@ -6,5 +6,5 @@
 
 
 
-(! apply/cmd-line (~ (copat [(f #:bind) (! idiom^ displayall (~! main-a f))]
+(! apply/cmd-line (~ (copat [(f #:bind) (! idiom^ (~! displayall 'filled-seats:) (~! main-a f))]
                             [() (! error "usage: racket main.rkt INPUTFILE")])))
