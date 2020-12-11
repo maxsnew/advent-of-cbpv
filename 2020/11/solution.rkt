@@ -71,6 +71,39 @@
   (! cl-foreach insert-neighbors (~! colist<-list seats))
   (ret gpr))
 
+(def-thunk (! scale (list x y) s) (! idiom^ List (~! * s x) (~! * s y)))
+
+;; return all visible seats from a point
+(def-thunk (! visible-ixs grid pt)
+  [h <- (! vector-length grid)]
+  [w <- (! <<v vector-length 'o vector-ref grid 0)]
+  [in-bounds? = (~ (copat [((list x y))
+                           (! and (~! <= 0 x) (~! < x w)
+                                  (~! <= 0 y) (~! < y h))]))]
+  [insert-closest-visible = (~ (λ (visibles direction)
+                                 (patc (! CBN  (~! range 1)
+                                          % n> (~! cl-map (~! <<v add-pt pt 'o scale direction))
+                                          % n> (~! take-while in-bounds?)
+                                          % n> (~! cl-filter (~! <<v not 'o equal? #\. 'o grid-ref grid))
+                                          % n> (~! idiom^ view)
+                                          % n$)
+                                       ['() (ret visibles)]
+                                       [(cons x _) (ret (cons x visibles))])))]
+  (! cl-foldl
+     (~! colist<-list neighbor-vecs)
+     insert-closest-visible
+     '()))
+
+(def-thunk (! visible-seats-grid grid seats)
+  [g-visible <- (! copy-grid grid)]
+  [seat-set <- (! table-set<-list seats)]
+  [insert-visible = (~ (λ (pt)
+                         (do 
+                             [ixs <- (! visible-ixs grid pt)]
+                           (! grid-set! g-visible pt ixs))))]
+  (! cl-foreach insert-visible (~! colist<-list seats))
+  (ret g-visible))
+
 ;; The initial version was too slow
 ;; I have two optimizations in mind that should help
 ;;
@@ -81,7 +114,7 @@
 ;;    changed. This should vastly speed up the later iterations since
 ;;    parts of the map stabilize each round.
 
-(def-thunk (! step-life g-neighbors g-from g-to seats)
+(def-thunk (! step-life crowd g-neighbors g-from g-to seats)
   ;; update g-to with the new state,
   ;; return #t if you changed
   [live = (~ (λ (changed pt)
@@ -98,7 +131,7 @@
                                        (ret '())])]
                                [#\. (ret '())]
                                [#\# ;; dead if 4+ occupied neighbors
-                                (cond [(! <<v <= 4 'o length 'o filter (~! equal? #\#) 'o map (~! grid-ref g-from) nearby-seats)
+                                (cond [(! <<v <= crowd 'o length 'o filter (~! equal? #\#) 'o map (~! grid-ref g-from) nearby-seats)
                                        (! grid-set! g-to pt #\L)
                                        (ret nearby-seats)]
                                       [else
@@ -109,27 +142,33 @@
      % v> set->list
      % v$))
 
-(def-thunk (! life-loop all-seats g-neighbors g-cur g-next seats generation)
+(def-thunk (! life-loop crowd all-seats g-neighbors g-cur g-next seats generation)
   [l <- (! length seats)]
   (! displayall 'generation: generation)
-  ;; (! displayall 'seats: l)
-  ;; (! display-grid g-cur)
+  (! displayall 'seats: l)
+  (! display-grid g-cur)
   [generation <- (! + 1 generation)]
-  (patc (! step-life g-neighbors g-cur g-next seats)
+  (patc (! step-life crowd g-neighbors g-cur g-next seats)
         ['() (! CBN (~! colist<-list all-seats)
             % n> (~! cl-map (~! grid-ref g-cur))
             % n> (~! cl-filter (~! equal? #\#))
             % n> cl-length
             % n$)]
-        [seats (! life-loop all-seats g-neighbors g-next g-cur seats generation)]))
+        [seats (! life-loop crowd all-seats g-neighbors g-next g-cur seats generation)]))
 
-(def-thunk (! main-a f)
+(def-thunk (! main mk-neighbors crowd f)
   (patc (! idiom^ parse (~! slurp-lines! f)) [(list w h grid)
    [ixs <- (! list<-colist (~! cartesian-product (~! range 0 w) (~! range 0 h)))]
    [seats <- (! <<v filter (~! <<v not 'o equal? #\. 'o grid-ref grid) ixs)]
    [g2 <- (! copy-grid grid)]
-   [g-neighbors <- (! neighbors-grid grid seats)]
-   ;; (! display-grid g-neighbors)
-   (! life-loop seats g-neighbors grid g2 seats 0)]))
+   [g-neighbors <- (! mk-neighbors grid seats)]
+   (! display-grid g-neighbors)
+   (! life-loop crowd seats g-neighbors grid g2 seats 0)]))
 
-(provide main-a)
+(def-thunk (! main-a f)
+  (! main neighbors-grid 4 f))
+
+(def-thunk (! main-b f)
+  (! main visible-seats-grid 5 f))
+
+(provide main-a main-b)
