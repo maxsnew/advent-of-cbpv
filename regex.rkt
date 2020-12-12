@@ -138,9 +138,6 @@
   [((list 'star e))
    (! support e)])
 
-;; A DFA is a pair of Regex and DFATable
-;; A DFATable is a Table Regex (List Bool (Table Char Regex))
-
 (def/copat (! cr-loop support tbl)
   [('()) (ret tbl)]
   [((cons new new-es))
@@ -157,6 +154,39 @@
    [new-null? <- (! null-accepting? new)]
    [tbl <- (! tbl 'set new (list new-null? new-table))]
    (! cr-loop support tbl new-es)])
+
+;; A DFA is a pair of Number and DFATable
+;; A DFATable is a Vector (List Bool (Table Char Regex))
+
+;; List Regex (Table Regex (List Bool (Table Char Regex))) -> F(List Nat (Vec (List Bool (Table Char Nat))))
+(def-thunk (! vectorize (list r tbl))
+  (! displayall 'beep)
+  [kvs <- (! tbl 'to-list)]
+  (! displayall 'beep)
+  [ks <- (! <<v filter (~ (! <<v not 'o equal? 'empty)) 'o map car kvs)]
+  (! displayall 'beep)
+  [ins-regex = (~ (copat [((list codes-tbl next-code) r)
+                          [codes-tbl <- (! codes-tbl 'set r next-code)]
+                          [next-code <- (! + 1 next-code)]
+                          (ret (list codes-tbl next-code))]))]
+  (! displayall 'beep)
+  [regex-codes <- (! <<v first 'o foldl ks ins-regex (list empty-table 0))]
+  [regex-codes <- (! regex-codes 'set 'empty -1)]
+  [init <- (! regex-codes 'get r #f)]
+  [codify-tbl = (~ (λ (trans-tbl)
+                     ;; Table Char Regex
+                     (do [kvs <- (! trans-tbl 'to-list)]
+                         [ins = (~ (copat [(tbl (cons c r))
+                                           [code <- (! regex-codes 'get r #f)]
+                                           (! tbl 'set c code)]))]
+                         (! foldl kvs ins empty-table))))]
+  [codify = (~ (copat [((cons r (list accepts-null? trans-tbl)))
+                       [code <- (! regex-codes 'get r #f)]
+                       [code-tbl <- (! codify-tbl trans-tbl)]
+                       (! Cons code code-tbl)
+                       ]))]
+  [coded <- (! <<v list->vector 'o map codify kvs)]
+  (! List init coded))
 
 (def-thunk (! compile-regex e)
   [supp <- (! idiom^ (~! set->list) (~! support e))]
