@@ -138,9 +138,6 @@
   [((list 'star e))
    (! support e)])
 
-;; A DFA is a pair of Regex and DFATable
-;; A DFATable is a Table Regex (List Bool (Table Char Regex))
-
 (def/copat (! cr-loop support tbl)
   [('()) (ret tbl)]
   [((cons new new-es))
@@ -158,10 +155,41 @@
    [tbl <- (! tbl 'set new (list new-null? new-table))]
    (! cr-loop support tbl new-es)])
 
+;; A DFA is a pair of Number and DFATable
+;; A DFATable is a Vector (List Bool (Table Char Regex))
+
+;; List Regex (Table Regex (List Bool (Table Char Regex))) -> F(List Nat (Vec (List Bool (Table Char Nat))))
+(def-thunk (! vectorize r tbl)
+  [kvs <- (! tbl 'to-list)]
+  [ks <- (! <<v filter (~ (! <<v not 'o equal? 'empty)) 'o map car kvs)]
+  [ins-regex = (~ (copat [((list codes-tbl next-code) r)
+                          [codes-tbl <- (! codes-tbl 'set r next-code)]
+                          [next-code <- (! + 1 next-code)]
+                          (ret (list codes-tbl next-code))]))]
+  [regex-codes <- (! <<v first 'o foldl ks ins-regex (list empty-table 0))]
+  [regex-codes <- (! regex-codes 'set 'empty -1)]
+  [init <- (! regex-codes 'get r #f)]
+  [codify-tbl = (~ (λ (trans-tbl)
+                     ;; Table Char Regex
+                     (do [kvs <- (! trans-tbl 'to-list)]
+                         [ins = (~ (copat [(tbl (cons c r))
+                                           [code <- (! regex-codes 'get r #f)]
+                                           (! tbl 'set c code)]))]
+                         (! foldl kvs ins empty-table))))]
+  [codify = (~ (copat [((cons r (list accepts-null? trans-tbl)))
+                       [code <- (! regex-codes 'get r #f)]
+                       [code-tbl <- (! codify-tbl trans-tbl)]
+                       (! List code code-tbl)
+                       ]))]
+  [coded <- (! <<v list->vector 'o map codify kvs)]
+  (! List init coded))
+
 (def-thunk (! compile-regex e)
   [supp <- (! idiom^ (~! set->list) (~! support e))]
-  (! idiom^ (~! List e) (~! cr-loop supp empty-table (list e))))
+  [regex-tbl <- (! cr-loop supp empty-table (list e))]
+  (! vectorize e regex-tbl))
 
+#;
 (def/copat (! view-compiled-regex)
   [((list start tbl))
    (! idiom^ (~! List start)
@@ -170,45 +198,32 @@
                              (! idiom^ (~! List state accepting?) (~! transition 'to-list))])))
           (~! tbl 'to-list)))])
 
-(def-thunk (! dfa-accepts-null? (list state tbl))
-  (pat state
-       ['empty (ret #f)]
-       [_
-        (cond [(! tbl 'has-key? state) (! idiom^ first (~! tbl 'get state 'error))]
-              [else (! error 'dfa-doesnt-have-this-state)])]))
+(def-thunk (! dfa-accepts-null? st*tbl)
+  [st <- (! first st*tbl)]
+  [tbl <- (! second st*tbl)]
+  (cond [(! = st -1) (ret #f)]
+        [else
+         [data <- (! vector-ref tbl st)]
+         (! first data)]))
 
 (def/copat (! dfa-Deriv c)
   [((list state tbl))
-   (patc (! tbl 'get state #f) [(list accepts-null? trans-tbl)
+   (patc (! vector-ref tbl state) [(list accepts-null? trans-tbl)
     (cond [(! trans-tbl 'has-key? c) [state <- (! trans-tbl 'get c #f)]
            (! List state tbl)]
-          [else (! List 'empty tbl)])])])
+          [else (! List -1 tbl)])])])
 
 (def/copat (! empty-dfa?)
-  [((list 'empty _)) (ret #t)]
-  [(_)               (ret #f)])
+  [((list -1 _)) (ret #t)]
+  [(_)           (ret #f)])
 
+#;
 (def/copat (! dfa-matches? dfa)
   [('()) (! dfa-accepts-null? dfa)]
   [((cons c cs))
    [ddfa/dc <- (! dfa-Deriv c dfa)]
    (cond [(! empty-dfa? ddfa/dc) (ret #f)]
          [else (! dfa-matches? ddfa/dc cs)])])
-
-;; (def/copat (! long-match-loop dfa full-buf failK since-buf)
-;;   [('())
-;;    (! idiom^ failK (~! reverse since-buf))]
-;;   [((cons c cs))
-;;    [dfa <- (! dfa-Deriv c dfa)]
-;;    (cond [(! dfa-accepts-null? dfa)
-;;           [full-buf = (cons c full-buf)]
-;;           [match <- (! reverse full-buf)]
-;;           (! long-match-loop dfa full-buf (~! List match) '() cs)]
-;;          [(! empty-dfa? dfa)
-;;           [not-matched <- (! idiom^ append (~! reverse since-buf) (~! Cons c cs))]
-;;           (! failK not-matched)]
-;;          [else
-;;           (! long-match-loop dfa (cons c full-buf) failK (cons c since-buf) cs)])])
 
 (def-thunk (! long-match-loop accept dfa full-buf failK since-buf cs)
   (patc (! idiom^ view cs)
@@ -235,7 +250,7 @@
 
 (def-thunk (! dfa-vec-Deriv c dfas)
   [car*deriv = (~ (copat [((list f dfa)) (! idiom^ (~! List f) (~! dfa-Deriv c dfa))]))]
-  (! idiom^ (~! filter (~! <<v not 'o equal? 'empty 'o first 'o  second)) (~! map car*deriv dfas)))
+  (! idiom^ (~! filter (~! <<v not 'o = -1 'o first 'o  second)) (~! map car*deriv dfas)))
 
 (def-thunk (! first-null-acceptor dfas)
   (patc (! idiom^ view (~! cl-filter (~! <<v dfa-accepts-null? 'o second) (~! colist<-list dfas)))
@@ -387,4 +402,4 @@
  number/lex
  unsigned-number/lex
  exact-string/lex)
-(! displayall 'end-of-regex.rkt)
+;; (! displayall 'end-of-regex.rkt)
