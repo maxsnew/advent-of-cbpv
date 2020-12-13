@@ -198,24 +198,25 @@
                              (! idiom^ (~! List state accepting?) (~! transition 'to-list))])))
           (~! tbl 'to-list)))])
 
-(def-thunk (! dfa-accepts-null? st*tbl)
-  [st <- (! first st*tbl)]
-  [tbl <- (! second st*tbl)]
-  (cond [(! = st -1) (ret #f)]
-        [else
-         [data <- (! vector-ref tbl st)]
-         (! first data)]))
+(define-rec-thunk (! dfa-accepts-null? st*tbl)
+  (do [st <- (! first st*tbl)]
+      [tbl <- (! second st*tbl)]
+    (cond [(! = st -1) (ret #f)]
+          [else
+           [data <- (! vector-ref tbl st)]
+           (! first data)])))
 
-(def/copat (! dfa-Deriv c)
-  [((list state tbl))
-   (patc (! vector-ref tbl state) [(list accepts-null? trans-tbl)
+(define-thunk (! dfa-Deriv c dfa)
+  (do [state <- (! first dfa)] [state-data <- (! second dfa)]
+    [data <- (! vector-ref state-data state)]
+    [trans-tbl <- (! second data)]
     (cond [(! trans-tbl 'has-key? c) [state <- (! trans-tbl 'get c #f)]
-           (! List state tbl)]
-          [else (! List -1 tbl)])])])
+           (ret (list state state-data))]
+          [else (ret (list -1 state-data))])))
 
-(def/copat (! empty-dfa?)
-  [((list -1 _)) (ret #t)]
-  [(_)           (ret #f)])
+(define-thunk (! empty-dfa? dfa)
+  (do [st <- (! first dfa)]
+      (! = st -1)))
 
 #;
 (def/copat (! dfa-matches? dfa)
@@ -249,15 +250,21 @@
   (! long-match-loop dfa '() init-k '() s))
 
 (def-thunk (! dfa-vec-Deriv c dfas)
-  [car*deriv = (~ (copat [((list f dfa)) (! idiom^ (~! List f) (~! dfa-Deriv c dfa))]))]
-  (! idiom^ (~! filter (~! <<v not 'o = -1 'o first 'o  second)) (~! map car*deriv dfas)))
+  [car*deriv =
+             (~ (λ (f*dfa) (do [f <- (! first f*dfa)] [dfa <- (! second f*dfa)]
+                             [dfa <- (! dfa-Deriv c dfa)]
+                             (ret (list f dfa)))))]
+  [non-empty? = (~ (λ (lexer) (do [dfa <- (! second lexer)] [st <- (! first dfa)]
+                                (! >= st 0))))]
+  [derivs <- (! map car*deriv dfas)]
+  (! filter non-empty? derivs))
 
-(def-thunk (! first-null-acceptor dfas)
-  (patc (! idiom^ view (~! cl-filter (~! <<v dfa-accepts-null? 'o second) (~! colist<-list dfas)))
-    ['()        (ret #f)]
-    [(cons x _)
-     ; (! displayall 'first-null-acceptor x)
-     (ret x)]))
+(define-rec-thunk (! first-null-acceptor lexers)
+  (cond [(! null? lexers) (ret #f)]
+        [else
+         (do [lexer <- (! car lexers)] [dfa <- (! second lexer)] [lexers <- (! cdr lexers)]
+             (cond [(! dfa-accepts-null? dfa) (ret lexer)]
+                   [else (! first-null-acceptor lexers)]))]))
 
 (def-thunk (! vec-long-match-loop dfas full-buf failK since-buf cs)
   ;; (! displayall 'loop dfas full-buf failK since-buf cs)
@@ -301,20 +308,23 @@
     [#f (ret (~! abort 'no-match))])]
   (! vec-long-match-loop sig '() init-k '() itoks))
 
-(def-thunk (! lex-string-loop s best i-cur dfas)
-  [l <- (! string-length s)]
-  (cond [(! = i-cur l)
-         (ret best)]
-        [else
-         [c <- (! string-ref s i-cur)]
-         [dfas <- (! dfa-vec-Deriv c dfas)]
-         (cond [(! null? dfas) (ret best)]
-               [else
-                [i-cur <- (! + 1 i-cur)]
-                [best <- (patc (! first-null-acceptor dfas)
-                           [(list accept dfa) (ret (list accept i-cur))]
-                           [#f                (ret best)])]
-                (! lex-string-loop s best i-cur dfas)])]))
+(define-rec-thunk (! lex-string-loop s best i-cur dfas)
+  (do 
+      [l <- (! string-length s)]
+      (cond [(! = i-cur l)
+             (ret best)]
+            [else
+             [c <- (! string-ref s i-cur)]
+             [dfas <- (! dfa-vec-Deriv c dfas)]
+             (cond [(! null? dfas) (ret best)]
+                   [else
+                    [i-cur <- (! + 1 i-cur)]
+                    [best <- (do [r <- (! first-null-acceptor dfas)]
+                                 (if r
+                                     (do [accept <- (! first r)]
+                                         (ret (list accept i-cur)))
+                                     (ret best)))]
+                    (! lex-string-loop s best i-cur dfas)])])))
 
 (def-thunk (! lex-string sig ix s)
   (! lex-string-loop s 'no-match ix sig))
