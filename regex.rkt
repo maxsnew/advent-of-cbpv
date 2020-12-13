@@ -175,11 +175,12 @@
                          [ins = (~ (copat [(tbl (cons c r))
                                            [code <- (! regex-codes 'get r #f)]
                                            (! tbl 'set c code)]))]
-                         (! foldl kvs ins empty-table))))]
+                       [code-tbl <- (! foldl kvs ins empty-table)]
+                       (! code-tbl 'to-hash))))]
   [codify = (~ (copat [((cons r (list accepts-null? trans-tbl)))
                        [code <- (! regex-codes 'get r #f)]
                        [code-tbl <- (! codify-tbl trans-tbl)]
-                       (! List code code-tbl)
+                       (ret (list code code-tbl))
                        ]))]
   [coded <- (! <<v list->vector 'o map codify kvs)]
   (! List init coded))
@@ -210,7 +211,7 @@
   (do [state <- (! first dfa)] [state-data <- (! second dfa)]
     [data <- (! vector-ref state-data state)]
     [trans-tbl <- (! second data)]
-    (cond [(! trans-tbl 'has-key? c) [state <- (! trans-tbl 'get c #f)]
+    (cond [(! hash-has-key? trans-tbl c) [state <- (! hash-ref trans-tbl c)]
            (ret (list state state-data))]
           [else (ret (list -1 state-data))])))
 
@@ -309,8 +310,7 @@
   (! vec-long-match-loop sig '() init-k '() itoks))
 
 (define-rec-thunk (! lex-string-loop s best i-cur dfas)
-  (do 
-      [l <- (! string-length s)]
+  (do [l <- (! string-length s)]
       (cond [(! = i-cur l)
              (ret best)]
             [else
@@ -326,21 +326,26 @@
                                      (ret best)))]
                     (! lex-string-loop s best i-cur dfas)])])))
 
-(def-thunk (! lex-string sig ix s)
+(define-thunk (! lex-string sig ix s)
   (! lex-string-loop s 'no-match ix sig))
 
-(def-thunk (! fold-lex-string sig s)
-  [len <- (! string-length s)]
-  [step = (~ (λ (ix)
-               (cond [(! = len ix) (! cl-nil)]
-                     [else
-                      [c <- (! string-ref s ix)]
-                      (patc (! lex-string sig ix s)
-                        ['no-match (! error "fold-lex-string: didn't match anything" sig ix s)]
-                        [(list accept end-best)
-                         [otok <- (! <<v accept 'o string->list 'o substring s ix end-best)]
-                         (! Cons otok end-best)])])))]
-  (! cl-unfold step 0))
+(define-rec-thunk (! fold-lex-string-loop sig s len ix)
+  (cond [(! = ix len) (! cl-nil)]
+        [else
+         [c <- (! string-ref s ix)]
+         [r <- (! lex-string sig ix s)]
+         (cond [(! symbol? r) (! error "fold-lex-string: didn't match anything" sig ix s)]
+               [else
+                [accept <- (! first r)]
+                [end <- (! second r)]
+                [match-s <- (! substring s ix end)]
+                [match-chars <- (! string->list match-s)]
+                [otok <- (! accept match-chars)]
+                (! cl-cons otok (~! fold-lex-string-loop sig s len end))])]))
+
+(define-thunk (! fold-lex-string sig s)
+  (do [len <- (! string-length s)]
+      (! fold-lex-string-loop sig s len 0)))
 
 ;; number
 ;; (define! 3digits
