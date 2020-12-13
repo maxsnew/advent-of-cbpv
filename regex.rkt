@@ -160,8 +160,8 @@
 
 ;; List Regex (Table Regex (List Bool (Table Char Regex))) -> F(List Nat (Vec (List Bool (Table Char Nat))))
 (def-thunk (! vectorize r tbl)
-  [kvs <- (! tbl 'to-list)]
-  [ks <- (! <<v filter (~ (! <<v not 'o equal? 'empty)) 'o map car kvs)]
+  [kvs <- (! <<v filter (~! <<v not 'o equal? 'empty 'o car) 'o tbl 'to-list)]
+  [ks <- (! map car kvs)]
   [ins-regex = (~ (copat [((list codes-tbl next-code) r)
                           [codes-tbl <- (! codes-tbl 'set r next-code)]
                           [next-code <- (! + 1 next-code)]
@@ -180,7 +180,7 @@
   [codify = (~ (copat [((cons r (list accepts-null? trans-tbl)))
                        [code <- (! regex-codes 'get r #f)]
                        [code-tbl <- (! codify-tbl trans-tbl)]
-                       (ret (list code code-tbl))
+                       (ret (list accepts-null? code-tbl))
                        ]))]
   [coded <- (! <<v list->vector 'o map codify kvs)]
   (! List init coded))
@@ -310,7 +310,8 @@
   (! vec-long-match-loop sig '() init-k '() itoks))
 
 (define-rec-thunk (! lex-string-loop s best i-cur dfas)
-  (do [l <- (! string-length s)]
+  (do 
+      [l <- (! string-length s)]
       (cond [(! = i-cur l)
              (ret best)]
             [else
