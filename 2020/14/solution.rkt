@@ -2,6 +2,7 @@
 
 (require fiddle/prelude
          fiddle/stdlib/CoList
+         fiddle/stdlib/Eff
          fiddle/stdlib/Table
          fiddle/stdlib/IO
          "../../regex.rkt"
@@ -20,7 +21,7 @@
      % n> (~! cl-filter (~! <<v not 'o equal? 'space))
      % n> (~! sep-when (~ (λ (c) (! or (~! equal? 'mem c) (~! equal? 'mask c)))))
      % n> tl
-     ;; % n> (~! cl-map debug)
+     % n> (~! cl-map debug)
      % n$))
 
 (def-thunk (! from-bits xs)
@@ -73,7 +74,54 @@
             % v> (~! foldl^ + 0)
             % v$)]))
 
-(def-thunk (! main-b f)
-  (ret 'nyi))
+(def-thunk (! choose t1 t2)
+  (! bindE (~! raiseE 'flip)
+     (~ (copat [(#t) (! t1)]
+               [(#f) (! t2)]))))
 
-(provide main-a main-b)
+(def/copat (! modify-bit)
+  [(#\X b) (! choose (~! retE 0) (~! retE 1))]
+  [(#\0 b) (! retE b)]
+  [(#\1 _) (! retE 1)])
+
+(def/copat (! mod-and-cons)
+  [((list mb vb) tl)
+   (! mapE Cons (~! modify-bit mb vb) tl)])
+
+(def-thunk (! decode-addr mask loc)
+  (! CBN (~! cl-zipwith (~! colist<-string mask) (~! colist<-list loc))
+     % n> (~! cl-foldr^ mod-and-cons (~! retE '()))
+     % n> (~ (λ (t) (! handle t List
+                       (~ (copat [('flip resume)
+                                  (! idiom^ append (~! resume #t) (~! resume #f))])))))
+     % n$))
+
+(def-thunk (! b-step (list cur-mask mem))
+  (copat [((list new-mask)) (ret (list new-mask mem))]
+         [((list loc val))
+          [b-loc <- (! to-bits loc)]
+          [decoded-locs <- (! decode-addr cur-mask b-loc)]
+          [mem-locs <- (! map from-bits decoded-locs)]
+          [mem <- (! foldl mem-locs (~ (λ (mem loc) (! mem 'set loc val))) mem)]
+          (ret (list cur-mask mem))]))
+
+(def-thunk (! main-b f)
+  (patc (! cl-foldl (~! parse f) b-step (list id-mask empty-table))
+        [(list final-mask mem)
+         (! CBV (~! mem 'to-list)
+            % v> (~! map cdr)
+            % v> (~! foldl^ + 0)
+            % v$)]))
+
+(def-thunk (! main-c f)
+  (! CBN (~! parse f)
+     % n> (~! cl-filter (~! <<v = 1 'o length))
+     % n> (~! cl-map first)
+     % n> (~! cl-map string->list)
+     % n> (~! cl-map (~! filter (~! equal? #\X)))
+     % n> (~! cl-map length)
+     % n> list<-colist
+     % n$
+     ))
+
+(provide main-a main-b main-c)
