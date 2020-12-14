@@ -398,6 +398,11 @@
                   (! Cons otok cs)])])))]
   (! cl-unfold step c))
 
+(def-thunk (! char/lex cs f)
+  [e <- (! char/e cs)]
+  [d <- (! compile-regex e)]
+  (ret (list f d)))
+
 (provide
  ;; regex stuff
  cat/e alt/e
@@ -417,5 +422,7 @@
  bin/lex
  number/lex
  unsigned-number/lex
- exact-string/lex)
+ exact-string/lex
+ char/lex
+ )
 ;; (! displayall 'end-of-regex.rkt)
