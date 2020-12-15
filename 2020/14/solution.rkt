@@ -88,6 +88,14 @@
   [((list mb vb) tl)
    (! mapE Cons (~! modify-bit mb vb) tl)])
 
+(def-thunk (! mask-addr mask addr)
+  (! CBN (~! cl-zipwith (~! colist<-string mask) (~! colist<-list addr))
+     % n> (~! cl-map (~ (copat [((list #\X _)) (ret 'X)]
+                               [((list #\0 b)) (ret b)]
+                               [((list #\1 _)) (ret 1)])))
+     % n> list<-colist
+     % n$))
+
 (def-thunk (! decode-addr mask loc)
   (! CBN (~! cl-zipwith (~! colist<-string mask) (~! colist<-list loc))
      % n> (~! cl-foldr^ mod-and-cons (~! retE '()))
@@ -95,6 +103,71 @@
                        (~ (copat [('flip resume)
                                   (! idiom^ append (~! resume #t) (~! resume #f))])))))
      % n$))
+
+;; A Mem-Trie A is either
+;; (list 'none)
+;; (list 'val A)
+;; (list 'amb (Mem-Trie A))
+;; (list '01 (Mem-Trie A) (Mem-Trie A))
+(define empty-trie (list 'none))
+(def-thunk (! singleton bits x)
+  (cond [(! empty? bits) (ret (list 'val x))]
+        [else
+         [bit <- (! first bits)]
+         [bits <- (! rest bits)]
+         [t <- (! singleton bits x)]
+         (pat bit
+              [0 (ret (list '01 t empty-trie))]
+              [1 (ret (list '01 empty-trie t))]
+              ['X (ret (list 'amb t))])]))
+
+(def-thunk (! ins-mem-trie bits x t)
+  ;; (! displayall 'ins bits x t)
+  (cond [(! empty? bits) (ret (list 'val x))]
+        [else
+         [bit <- (! first bits)]
+         [tag <- (! first t)]
+         [bits <- (! rest bits)]
+         (pat (list bit tag)
+              [(list _ 'none) (! singleton (cons bit bits) x)]
+              [(list _ 'val) (! error "should never happen since everything's the same length")]
+              [(list 'X 'amb)
+               [tl <- (! second t)]
+               [tl-t <- (! ins-mem-trie bits x tl)]
+               (ret (list 'amb tl-t))]
+              [(list '0 'amb)
+               [tl <- (! second t)]
+               [l <- (! ins-mem-trie bits x tl)]
+               (ret (list '01 l tl))]
+              [(list '1 'amb)
+               [tl <- (! second t)]
+               [r <- (! ins-mem-trie bits x tl)]
+               (ret (list '01 tl r))]
+              [(list 'X '01)
+               [l <- (! second t)]
+               [r <- (! third t)]
+               [l <- (! ins-mem-trie bits x l)]
+               [r <- (! ins-mem-trie bits x r)]
+               (ret (list '01 l r))]
+              [(list 0 '01)
+               [l <- (! second t)]
+               [r <- (! third t)]
+               [l <- (! ins-mem-trie bits x l)]
+               (ret (list '01 l r))]
+              [(list 1 '01)
+               [l <- (! second t)]
+               [r <- (! third t)]
+               [r <- (! ins-mem-trie bits x r)]
+               (ret (list '01 l r))])]))
+
+(def/copat (! add-locs-loop)
+  [((list 'none)) (ret 0)]
+  [((list 'val x)) (ret x)]
+  [((list 'amb t)) (! <<v * 2 'o add-locs-loop t)]
+  [((list '01 l r)) (! idiom^ + (~! add-locs-loop l) (~! add-locs-loop r))])
+
+(def-thunk (! add-all-locs trie)
+  (! add-locs-loop trie))
 
 (def-thunk (! b-step (list cur-mask mem))
   (copat [((list new-mask)) (ret (list new-mask mem))]
@@ -105,6 +178,16 @@
           [mem <- (! foldl mem-locs (~ (λ (mem loc) (! mem 'set loc val))) mem)]
           (ret (list cur-mask mem))]))
 
+(def-thunk (! b-step^ (list cur-mask mem))
+  (copat [((list new-mask)) (ret (list new-mask mem))]
+         [((list loc val))
+          [b-loc <- (! to-bits loc)]
+          [loc <- (! mask-addr cur-mask b-loc)]
+          ;; (! displayall mem)
+          [mem <- (! ins-mem-trie loc val mem)]
+          (ret (list cur-mask mem))]))
+
+#;
 (def-thunk (! main-b f)
   (patc (! cl-foldl (~! parse f) b-step (list id-mask empty-table))
         [(list final-mask mem)
@@ -112,6 +195,11 @@
             % v> (~! map cdr)
             % v> (~! foldl^ + 0)
             % v$)]))
+
+(def-thunk (! main-b f)
+  (patc (! cl-foldl (~! parse f) b-step^ (list id-mask empty-trie))
+        [(list final-mask mem)
+         (! add-locs-loop mem)]))
 
 (def-thunk (! main-c f)
   (! CBN (~! parse f)
