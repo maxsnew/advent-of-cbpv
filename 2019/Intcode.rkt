@@ -4,7 +4,7 @@
 (require fiddle/stdlib/IO)
 (require fiddle/stdlib/CoList)
 (require fiddle/stdlib/FlexVec)
-(require "../Parse.rkt")
+(require "Parse.rkt")
 
 (provide parse-intcode-program
 

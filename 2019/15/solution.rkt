@@ -3,7 +3,7 @@
 (require fiddle/prelude)
 (require fiddle/stdlib/IO)
 (require fiddle/stdlib/CoList)
-(require "../../Parse.rkt")
+(require "../Parse.rkt")
 (require fiddle/stdlib/Table)
 
 (require "../Intcode.rkt")
