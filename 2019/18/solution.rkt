@@ -71,12 +71,35 @@
          ]
          ))
 
-
 (def-thunk (! starting-point c w h)
   (! <<n (~ (! <<v clv-hd 'o $)) 'o
      cl-filter (~ (! <<v equal? #\@ 'o c 'read)) 'o
      cl-map (~ (! apply mk-coord)) 'o
      cartesian-product (~ (! range 0 w)) (~ (! range 0 h))))
+
+;; Goal: find the shortest path to get all the keys
+
+;; Step 1: parse the input into a graph whose nodes are keys and doors
+;; and whose edges (n1 n2) exist when the path from n1 to n2 doesn't
+;; go through any other nodes and the weight is the physical distance
+;; between them.
+;
+;; Step 2: generate a lazy game tree where each layer is a list of
+;; gamestates and playtimes paired with the remaining
+;
+;; Step 3: explore the game tree, pruning when two subtrees have the
+;; same gamestate, discarding the subtrees with a longer playtime
+
+;; Idea for solution: make a lazy game tree whose branches are the
+;; alternatives of when to pick, paired with a state of
+;  0) current inventory
+;  1) current inventory of keys
+;  and a "runtime" of the total distance traveled to get there
+;
+;;
+;; then we can search through the tree one step at a time, but
+;; crucially when two subtrees have the same inventory of keys, we can
+;; abandon the one with a larger total distance
 
 (def-thunk (! main-a (rest args))
   [lines <- (! <<n list<-colist 'o cl-map string->list 'o apply slurp-lines~ args)]
