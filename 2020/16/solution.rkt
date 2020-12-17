@@ -69,107 +69,6 @@
        % n> (~! cl-foldl^ + 0)
        % n$)]))
 
-(def-thunk (! valid-ticket? ps t)
-  (patc (! violations ps t)
-        ['() (ret #t)]
-        [_   (ret #f)]))
-
-(def/copat (! valid-rule? num)
-  [((list name p)) (! p num)]
-  [() (! error 'wtf)])
-
-(def-thunk (! andb b1 b2)
-  (if b1
-      (ret b2)
-      (ret #f)))
-
-(def-thunk (! remove-rule! v except-ix rule)
-  [l <- (! vector-length v)]
-  (! CBN (~! range 0 l)
-     % n> (~! cl-filter (~! <<v not 'o = except-ix))
-     % n> (~! cl-foreach (~ (λ (ix)
-                              (do [rules <- (! vector-ref v ix)]
-                                  [rules <- (! filter (~! <<v not 'o equal? rule) rules)]
-                                (! vector-set! v ix rules)))))
-     % n$))
-
-(def-thunk (! singleton? xs)
-  [tl <- (! cdr xs)]
-  (! null? tl))
-
-#;
-(def-thunk (! eliminate-bad-rules rules-vec fields k)
-  (! displayall 'next-ticket: fields)
-  [b <- (! CBN (~! cl-zipwith (~! colist<-list fields) (~! range 0))
-       % n> (~! cl-map (~ (copat [((list num ix))
-                                  [cand-rules <- (! vector-ref rules-vec ix)]
-                                  (cond [(! singleton? cand-rules)
-                                         ;; (! displayall 'already-determined ix cand-rules)
-                                         (ret #t)]
-                                        [else
-                                         [valid-rules <- (! filter (~! valid-rule? num) cand-rules)]
-                                         (! vector-set! rules-vec ix valid-rules)
-                                         (pat valid-rules
-                                              [(list rule)
-                                               [rule-name <- (! first rule)]
-                                               (! displayall 'determined-a-new-rule ix rule-name)
-                                               (! remove-rule! rules-vec ix rule)
-                                               (ret #t)]
-                                              [_           (ret #f)])])])))
-       % n> (~! cl-foldl^ andb #t)
-       % n$)]
-  (if b
-      (ret '())
-      (! k)))
-
-;; U(Table K (Listof V)) -> Listof K -> V -> U(Table K (Listof V))
-(def-thunk (! remove-val tbl ks v)
-  (! foldl ks
-     (~ (λ (tbl k)
-          (do [vs <- (! tbl 'get k #f)]
-              [vs <- (! filter (~! <<v not 'o equal? v) vs)]
-            (! tbl 'set k vs))))
-     tbl))
-#;
-(def-thunk (! eliminate-bad-rules fields k fields->rules rules->fields)
-  (! displayall 'next-ticket: fields)
-  [b <- (! CBN (~! cl-zipwith (~! colist<-list fields) (~! range 0))
-       % n> (~! cl-map (~ (copat [((list num ix))
-                                  [cand-rules <- (! fields->rules 'get ix #f)]
-                                  (cond [(! singleton? cand-rules)
-                                         ;; (! displayall 'already-determined ix cand-rules)
-                                         (ret #t)]
-                                        [else
-                                         (patc (! partition (~! valid-rule? num) cand-rules)
-                                               [(list valid-rules invalid-rules)
-                                                [fields->rules <- (! fields->rules 'set ix valid-rules)]
-                                                [rules->fields <- (! remove-fields rules->fields invalid-rules ix)]
-                                                []])
-                                         (! vector-set! rules-vec ix valid-rules)
-                                         (pat valid-rules
-                                              [(list rule)
-                                               [rule-name <- (! first rule)]
-                                               (! displayall 'determined-a-new-rule ix rule-name)
-                                               (! remove-rule! rules-vec ix rule)
-                                               (ret #t)]
-                                              [_           (ret #f)])])])))
-       % n> (~! cl-foldl^ andb #t)
-       % n$)]
-  )
-
-#;
-(def-thunk (! determine-fields named-rules valid-tix)
-  [len <- (! length named-rules)]
-  [fields->rules <- (! <<v table<-list 'o list<-colist (~! cl-zipwith (~! colist<-list named-rules) (~! range 0)))] ;; (Map Ix (Listof NamedRule))
-  ;; (! make-vector len named-rules)
-  [rules->fields <- (! <<v table<-list 'o list<-colist (~! cl-zipwith (~! colist<-list named-rules) (~! range 0)))]
-  (patc (! cl-foldr ;; Loop invariant B = F '()
-           valid-tix eliminate-bad-rules List fields->rules rules->fields)
-        [(list fields->rules rules->fields)
-           [remaining <- (! fields->rules 'to-list)]
-           (! map (~! displayall 'possible-rules:) remaining)
-           (! <<v map first 'o map first remaining)]))
-
 ;; Part b Sketch:
 ;; make a table : FieldIx x Rule -> Bool
 ;; initially all #t
@@ -215,6 +114,56 @@
      % n> list<-colist
      % n$))
 
+(def-thunk (! push-tbl t k v)
+  (! update~ t k (~! empty-table 'set v #t) (~! swap apply (list 'set v #t))))
+
+(def-thunk (! pop-all k->vs v)
+  [ks <- (! <<v map car 'o k->vs 'to-list)]
+  (! cl-foldl (~! colist<-list ks)
+     (~ (λ (k->vs k)
+          (do [vs <- (! oo k->vs 'get k #f '@ 'remove v)]
+              (! k->vs 'set k vs))))
+     k->vs))
+
+(def-thunk (! find-solved k->vs)
+  (cond [(! k->vs 'empty?) (ret 'done)]
+        [else
+         (! cl-foldr (~! <<v colist<-list 'o k->vs 'to-list)
+            (~ (copat [((cons key tbl) kont)
+                       (patc (! tbl 'to-list)
+                             [(list (cons val _)) (ret (list key val))]
+                             [_ (! kont)])]))
+            (~! Ret 'none))]))
+
+(def-thunk (! solve-constraints rules->ixs ixs->rules solved)
+  (patc (! find-solved rules->ixs)
+        ['done (ret solved)]
+        ['none
+         (! displayall 'plz-dont-loop)
+         (! solve-constraints ixs->rules rules->ixs solved)]
+        [(list rule ix)
+         (! displayall 'solved1: rule ix)
+
+         [rules->ixs <- (! rules->ixs 'remove rule)]
+         [rules->ixs <- (! pop-all rules->ixs ix)]
+
+         [ixs->rules <- (! ixs->rules 'remove ix)]
+         [ixs->rules <- (! pop-all ixs->rules rule)]
+
+         [solved = (cons (list rule ix) solved)]
+         (! solve-constraints rules->ixs ixs->rules solved)]))
+
+(def-thunk (! curry-relation rel)
+  (! displayall 'currying)
+  (! cl-foldr (~! <<v colist<-list 'o rel 'to-list)
+     (~ (copat [((cons (list l r) _) k l->rs r->ls)
+                [l->rs <- (! push-tbl l->rs l r)]
+                [r->ls <- (! push-tbl r->ls r l)]
+                (! k l->rs r->ls)]))
+     List
+     empty-table
+     empty-table))
+
 (def-thunk (! main-b f)
   (patc (! list<-colist (~! parse f))
     [(list rules (list _ my-ticket) (cons _ nearby-tix))
@@ -233,17 +182,18 @@
                                      (! good-rule*ixs 'remove (list (list rule p) ix))])]))
                    good-rule*ixs)
           % n$)]
-     (! displayall 'my-ticket: my-ticket)
-     [possibilities <- (! <<v map car 'o good-rule*ixs 'to-list)]
-     (! cl-foreach displayall (~! colist<-list possibilities))
-     (! displayall 'need: l)
-     (! length possibilities)
-     #;
-     (! CBN (~! cl-zipwith (~! colist<-list rules) (~! colist<-list my-ticket))
-        % n> (~! cl-filter (~! <<v equal? "departure" 'o first 'o first))
-        % n> (~! cl-map debug)
-        % n> (~! cl-map second)
-        % n> (~! cl-foldl^ * 1)
-        % n$)]))
+     (patc (! curry-relation good-rule*ixs)
+           [(list rules->ixs ixs->rules)
+            (! displayall 'curry-time-over)
+            (! <<v displayall 'rules->ixs 'o rules->ixs 'to-list)
+            (! <<v displayall 'ixs->rules 'o ixs->rules 'to-list)
+            [rules<->ixs <- (! solve-constraints rules->ixs ixs->rules '())]
+            [my-ticket-v <- (! list->vector my-ticket)]
+            (! CBV (~! filter (~! <<v equal? "departure" 'o first 'o first 'o first) rules<->ixs)
+               % v> (~! map debug)
+               % v> (~! map second)
+               % v> (~! map (~! vector-ref my-ticket-v))
+               % v> (~! foldl^ * 1)
+               % v$)])]))
 
 (provide main-a main-b)
