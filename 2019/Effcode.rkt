@@ -36,31 +36,39 @@
 ;; A Parameter-Mode is one of
 ;;   - 0 , representing position mode
 ;;   - 1 , representing immediate mode
-
-(def-thunk (! grab-args mem ptr n prev)
-  (cond [(! zero? n)
-         [args <- (! reverse prev)]
-         (ret (list ptr args))]
-        [else
+(def-thunk (! grab-args mem ptr n)
+  (cond [(! = n 0) (ret (list ptr '()))]
+        [(! = n 1)
          [x <- (! mem 'get ptr)]
          [ptr <- (! + ptr 1)]
-         [prev <- (! Cons x prev)]
-         [n <- (! - n 1)]
-         (! grab-args mem ptr n prev)]))
+         (ret (list ptr (list x)))
+         ]
+        [(! = n 2)
+         [x <- (! mem 'get ptr)]
+         [ptr <- (! + ptr 1)]
+         [y <- (! mem 'get ptr)]
+         [ptr <- (! + ptr 1)]
+         (ret (list ptr (list x y)))
+         ]
+        [(! = n 3)
+         [x <- (! mem 'get ptr)]
+         [ptr <- (! + ptr 1)]
+         [y <- (! mem 'get ptr)]
+         [ptr <- (! + ptr 1)]
+         [z <- (! mem 'get ptr)]
+         [ptr <- (! + ptr 1)]
+         (ret (list ptr (list x y z)))]))
 
 ;; parse-opcode : Number -> Cons Opcode (Listof Parameter-Modes)
 (def-thunk (! parse-opcode n)
   [code <- (! modulo n 100)]
   [modes-num <- (! quotient n 100)]
-  [modes <- (! <<v reverse 'o map digit<-char 'o string->list 'o number->string modes-num '$)]
-  (! Cons code modes))
-
-;; Nat -> Listof Parameter-Mode -> Parameter-Mode
-;; lookup n in the list, if the list is too short, return 0
-(def/copat (! nth-mode)
-  [(n (= '())) (ret 0)]
-  [((= 0) modes) (! first modes)]
-  [(n modes) (! idiom (~ (ret nth-mode)) (~ (! - n 1)) (~ (! cdr modes)))])
+  [mode1 <- (! modulo modes-num 10)]
+  [modes-num <- (! quotient modes-num 10)]
+  [mode2 <- (! modulo modes-num 10)]
+  [modes-num <- (! quotient modes-num 10)]
+  [mode3 <- (! modulo modes-num 10)]
+  (ret (list code mode1 mode2 mode3)))
 
 ;; read-parameter
 ;; Memory -> Nat -> Parameter-Mode -> F Nat
@@ -72,9 +80,9 @@
    (! mem 'get ptr)]
   [() (! error "read-parameter got an invalid parameter mode")])
 
-(def/copat (! compute-dest)
-  [(rbase ptr (= 0)) (ret ptr)]
-  [(rbase ptr (= 2)) (! + ptr rbase)])
+(def/copat (! compute-dest rbase ptr)
+  [((= 0)) (ret ptr)]
+  [((= 2)) (! + ptr rbase)])
 
 (def/copat (! op->num-params)
   [((= 1))  (ret 3)]
@@ -93,74 +101,69 @@
 ;;  . 'output O -> U(U(Intcode-Driver I O R) -> R) -> R
 ;;  . 'halt   -> R
 
+(def-thunk (! arith f mem iptr rbase params modes)
+  [param1 <- (! first params)] [param2 <- (! second params)] [param3 <- (! third params)] 
+  [mode1 <- (! first modes)] [mode2 <- (! second modes)] [mode3 <- (! third modes)]
+  [val1 <- (! read-parameter mem rbase param1 mode1)]
+  [val2 <- (! read-parameter mem rbase param2 mode2)]
+  [dest <- (! compute-dest rbase param3 mode3)]
+  [result <- (! f val1 val2)]
+  (! mem 'set dest result)
+  (! retE (list iptr rbase)))
+
+(def-thunk (! jif p? mem iptr rbase params modes)
+  [p1 <- (! first params)] [m1 <- (! first modes)]
+  [p2 <- (! second params)] [m2 <- (! second modes)]
+  [discrim <- (! read-parameter mem rbase p1 m1)]
+  [dest <- (! read-parameter mem rbase p2 m2)]     
+  [iptr <- (ifc (! p? discrim) (ret iptr) (ret dest))]
+  (! retE (list iptr rbase))  )
+
+(def-thunk (! cmp >< mem iptr rbase params modes)
+  [p1 <- (! first params)]  [m1 <- (! first modes)]
+  [p2 <- (! second params)] [m2 <- (! second modes)]
+  [p3 <- (! third params)]  [m3 <- (! third modes)]
+  [v1 <- (! read-parameter mem rbase p1 m1)]
+  [v2 <- (! read-parameter mem rbase p2 m2)]
+  [dest <- (! compute-dest rbase p3 m3)]
+  [result <- (ifc (! >< v1 v2) (ret 1) (ret 0))]
+  (! mem 'set dest result)
+  (! retE (list iptr rbase)))
+
 ;; Mem -> Ptr -> ? -> Op -> Params -> Modes -> EffCode (List Ptr Base)
 (def-thunk (! effcode-step mem iptr rbase op params modes)
   (pat op
    [(= 99) (! raiseE 'halt)]
    [(= 1) ;; + x1 x2 ~> x3
-    [param1 <- (! first params)] [param2 <- (! second params)] [param3 <- (! third params)] 
-    [mode1 <- (! nth-mode 0 modes)] [mode2 <- (! nth-mode 1 modes)] [mode3 <- (! nth-mode 2 modes)]
-    [val1 <- (! read-parameter mem rbase param1 mode1)]
-    [val2 <- (! read-parameter mem rbase param2 mode2)]
-    [dest <- (! compute-dest rbase param3 mode3)]
-    [result <- (! + val1 val2)]
-    (! mem 'set dest result)
-    (! retE (list iptr rbase))]
+    (! arith + mem iptr rbase params modes)]
    [(= 2) ;; * x1 x2 ~> x3
-    [param1 <- (! first params)] [param2 <- (! second params)] [param3 <- (! third params)] 
-    [mode1 <- (! nth-mode 0 modes)] [mode2 <- (! nth-mode 1 modes)] [mode3 <- (! nth-mode 2 modes)]
-    [val1 <- (! read-parameter mem rbase param1 mode1)]
-    [val2 <- (! read-parameter mem rbase param2 mode2)]
-    [dest <- (! compute-dest rbase param3 mode3)]
-    [result <- (! * val1 val2)]
-    (! mem 'set dest result)
-    (! retE (list iptr rbase))]
+    (! arith * mem iptr rbase params modes)]
    [(= 3) ;; input ~> x1
     (! bindE (~! raiseE 'input)
        (~ (λ (inp)
             (do ;; (! displayall 'input-received: inp)
-                [dest <- (! idiom (~ (ret compute-dest)) (~ (ret rbase)) (~ (! first params)) (~ (! nth-mode 0 modes)))]
+                [p1 <- (! first params)] [m1 <- (! first modes)]
+                [dest <- (! compute-dest rbase p1 m1)]
                 (! mem 'set dest inp)
               (! retE (list iptr rbase))))))]
    [(= 4) ;; x1 ~> output
-    [param <- (! first params)]
-    [mode <- (! nth-mode 0 modes)]
+    [param <- (! first params)] [mode <- (! first modes)]
     [outp <- (! read-parameter mem rbase param mode)]
     ;; (! displayall 'output: outp)
     (! bindE (~! raiseE (list 'output outp))
        (~ (λ (_) (! retE (list iptr rbase)))))]
    [(= 5) ;; jump-not-zero
-    [discrim <- (! idiom (~ (ret read-parameter)) (~ (ret mem)) (~ (ret rbase))
-                   (~ (! first params)) (~ (! nth-mode 0 modes)))]
-    [dest <- (! idiom (~ (ret read-parameter)) (~ (ret mem)) (~ (ret rbase))
-                (~ (! second params)) (~ (! nth-mode 1 modes)))]     
-    [iptr <- (ifc (! zero? discrim) (ret iptr) (ret dest))]
-    (! retE (list iptr rbase))]
+    (! jif zero? mem iptr rbase params modes)]
    [(= 6) ;; jump-if-zero
-    [discrim <- (! idiom (~ (ret read-parameter)) (~ (ret mem)) (~ (ret rbase))
-                   (~ (! first params)) (~ (! nth-mode 0 modes)))]
-    [dest <- (! idiom (~ (ret read-parameter)) (~ (ret mem)) (~ (ret rbase))
-                (~ (! second params)) (~ (! nth-mode 1 modes)))]
-    [iptr <- (ifc (! zero? discrim) (ret dest) (ret iptr))]
-    (! retE (list iptr rbase))]
+    (! jif (~! <<v not 'o zero?) mem iptr rbase params modes)]
    [(= 7) ;; <
-    [v1 <- (! idiom (~ (ret read-parameter)) (~ (ret mem)) (~ (ret rbase)) (~ (! first params)) (~ (! nth-mode 0 modes)))]
-    [v2 <- (! idiom (~ (ret read-parameter)) (~ (ret mem)) (~ (ret rbase)) (~ (! second params)) (~ (! nth-mode 1 modes)))]
-    [dest <- (! idiom (~ (ret compute-dest)) (~ (ret rbase)) (~ (! third params)) (~ (! nth-mode 2 modes)))]
-    [result <- (ifc (! < v1 v2) (ret 1) (ret 0))]
-    (! mem 'set dest result)
-    (! retE (list iptr rbase))]
+    (! cmp <  mem iptr rbase params modes)]
    [(= 8) ;; =
-    [v1 <- (! idiom (~ (ret read-parameter)) (~ (ret mem)) (~ (ret rbase)) (~ (! first params)) (~ (! nth-mode 0 modes)))]
-    [v2 <- (! idiom (~ (ret read-parameter)) (~ (ret mem)) (~ (ret rbase)) (~ (! second params)) (~ (! nth-mode 1 modes)))]
-    [dest <- (! idiom (~ (ret compute-dest)) (~ (ret rbase)) (~ (! third params)) (~ (! nth-mode 2 modes)))]
-    [result <- (ifc (! = v1 v2) (ret 1) (ret 0))]
-    (! mem 'set dest result)
-    (! retE (list iptr rbase))]
+    (! cmp = mem iptr rbase params modes)]
    [(= 9) ;; rbase += arg
-    [v <- (! idiom (~ (ret read-parameter)) (~ (ret mem)) (~ (ret rbase))
-             (~ (! first params)) (~ (! nth-mode 0 modes)))]
-    [rbase <- (! + rbase v)]
+    [p1 <- (! first params)]  [m1 <- (! first modes)]
+    [v1 <- (! read-parameter mem rbase p1 m1)]
+    [rbase <- (! + rbase v1)]
     (! retE (list iptr rbase))]))
 
 (def-thunk (! effcode-loop mem iptr rbase)
@@ -169,7 +172,7 @@
   [op <- (! first code*modes)]
   [modes <- (! rest code*modes)]
   [n <- (! op->num-params op)]
-  (patc (! grab-args mem iptr n '())
+  (patc (! grab-args mem iptr n)
         [(list iptr params)
          ;; (! displayall 'letsstep iptr rbase op params modes)
          (! appE^ (~! apply (~! effcode-loop mem)) (~! effcode-step mem iptr rbase op params modes))]))
