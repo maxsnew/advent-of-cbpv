@@ -4,9 +4,10 @@
          fiddle/stdlib/IO
          fiddle/stdlib/CoList
          fiddle/stdlib/Eff
-         fiddle/stdlib/FlexVec
+
+         "Memory.rkt"
          "Parse.rkt"
-         "Intcode.rkt")
+         )
 
 (provide effcode parse-intcode-program)
 
@@ -32,30 +33,29 @@
   [chars <- (! <<n list<-colist 'o apply read-all-chars args '$)]
   (! apply (~ (! parse-chars 'loop '() '())) chars))
 
-
 ;; A Parameter-Mode is one of
 ;;   - 0 , representing position mode
 ;;   - 1 , representing immediate mode
-(def-thunk (! grab-args mem ptr n)
+(define-thunk (! grab-args mem ptr n)
   (cond [(! = n 0) (ret (list ptr '()))]
         [(! = n 1)
-         [x <- (! mem 'get ptr)]
+         [x <- (! memory-get mem ptr)]
          [ptr <- (! + ptr 1)]
          (ret (list ptr (list x)))
          ]
         [(! = n 2)
-         [x <- (! mem 'get ptr)]
+         [x <- (! memory-get mem ptr)]
          [ptr <- (! + ptr 1)]
-         [y <- (! mem 'get ptr)]
+         [y <- (! memory-get mem ptr)]
          [ptr <- (! + ptr 1)]
          (ret (list ptr (list x y)))
          ]
         [(! = n 3)
-         [x <- (! mem 'get ptr)]
+         [x <- (! memory-get mem ptr)]
          [ptr <- (! + ptr 1)]
-         [y <- (! mem 'get ptr)]
+         [y <- (! memory-get mem ptr)]
          [ptr <- (! + ptr 1)]
-         [z <- (! mem 'get ptr)]
+         [z <- (! memory-get mem ptr)]
          [ptr <- (! + ptr 1)]
          (ret (list ptr (list x y z)))]))
 
@@ -72,12 +72,12 @@
 
 ;; read-parameter
 ;; Memory -> Nat -> Parameter-Mode -> F Nat
-(def/copat (! read-parameter)
-  [(mem rbase ptr (= 0)) (! mem 'get ptr)]
-  [(mem rbase val (= 1)) (ret val)]
-  [(mem rbase ptr (= 2))
-   [ptr <- (! + rbase ptr)]
-   (! mem 'get ptr)]
+(def/copat (! read-parameter mem rbase param)
+  [((= 0)) (! memory-get mem param)]
+  [((= 1)) (ret param)]
+  [((= 2))
+   [ptr <- (! + rbase param)]
+   (! memory-get mem ptr)]
   [() (! error "read-parameter got an invalid parameter mode")])
 
 (def/copat (! compute-dest rbase ptr)
@@ -108,7 +108,7 @@
   [val2 <- (! read-parameter mem rbase param2 mode2)]
   [dest <- (! compute-dest rbase param3 mode3)]
   [result <- (! f val1 val2)]
-  (! mem 'set dest result)
+  (! memory-set! mem dest result)
   (! retE (list iptr rbase)))
 
 (def-thunk (! jif p? mem iptr rbase params modes)
@@ -127,7 +127,7 @@
   [v2 <- (! read-parameter mem rbase p2 m2)]
   [dest <- (! compute-dest rbase p3 m3)]
   [result <- (ifc (! >< v1 v2) (ret 1) (ret 0))]
-  (! mem 'set dest result)
+  (! memory-set! mem dest result)
   (! retE (list iptr rbase)))
 
 ;; Mem -> Ptr -> ? -> Op -> Params -> Modes -> EffCode (List Ptr Base)
@@ -144,7 +144,7 @@
             (do ;; (! displayall 'input-received: inp)
                 [p1 <- (! first params)] [m1 <- (! first modes)]
                 [dest <- (! compute-dest rbase p1 m1)]
-                (! mem 'set dest inp)
+                (! memory-set! mem dest inp)
               (! retE (list iptr rbase))))))]
    [(= 4) ;; x1 ~> output
     [param <- (! first params)] [mode <- (! first modes)]
@@ -167,7 +167,7 @@
     (! retE (list iptr rbase))]))
 
 (def-thunk (! effcode-loop mem iptr rbase)
-  [code*modes <- (! <<v parse-opcode 'o mem 'get iptr '$)]
+  [code*modes <- (! <<v parse-opcode 'o memory-get mem iptr '$)]
   [iptr <- (! + iptr 1)]
   [op <- (! first code*modes)]
   [modes <- (! rest code*modes)]
