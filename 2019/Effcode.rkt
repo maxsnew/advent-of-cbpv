@@ -9,7 +9,8 @@
          "Parse.rkt"
          )
 
-(provide effcode parse-intcode-program)
+(provide effcode parse-intcode-program
+         buffer-output)
 
 ;; PARSING
 ;
@@ -32,6 +33,20 @@
 (def-thunk (! parse-intcode-program (rest args))
   [chars <- (! <<n list<-colist 'o apply read-all-chars args '$)]
   (! apply (~ (! parse-chars 'loop '() '())) chars))
+
+(def-thunk (! buffer-output t n)
+  (! re-handle t
+     (~ (copat
+         [((list 'output o) resume m outs)
+          [m <- (! + 1 m)]
+          [outs = (cons o outs)]
+          (cond [(! = m n)
+                 [outs <- (! reverse outs)]
+                 (! bindE (~! raiseE (cons 'output outs)) (~ (λ (x) (! resume x 0 '()))))]
+                [else (! resume '() m outs)])]
+         [(op resume m outs)
+          (! bindE (~! raiseE op) (~ (λ (x) (! resume x m outs))))]))
+     0 '()))
 
 ;; A Parameter-Mode is one of
 ;;   - 0 , representing position mode
