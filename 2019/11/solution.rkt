@@ -3,8 +3,9 @@
 (require fiddle/prelude)
 (require fiddle/stdlib/IO)
 (require fiddle/stdlib/CoList)
-(require "../../Parse.rkt")
-(require "../Intcode.rkt")
+(require fiddle/stdlib/Eff)
+(require "../Parse.rkt")
+(require "../Effcode.rkt")
 (require "../Coordinates.rkt")
 
 (provide main-a main-b)
@@ -53,18 +54,35 @@
   [((= 'halt))
    (! <<v List 'num-ever-painted: 'o length 'o set->list 'o list->set painted '$)])
 
+(def-thunk (! handle-a t canvas loc dir painted)
+  (! shallow-handle t error (~ (copat
+    [('input resume)
+     [color <- (! canvas 'read loc)]
+     (! handle-a (~! resume color) canvas loc dir painted)]
+    [((list 'output color) resume)
+     [painted = (cons loc painted)]
+     (! canvas 'write loc color)
+     (! shallow-handle (~! resume '()) error (~ (copat
+     [((list 'output num-turn) resume)
+     [lr <- (! LR<-num num-turn)]
+     [dir <- (! turn dir lr)]
+     [loc <- (! <<v coord-add loc 'o vec<-dir dir '$)]
+     (! handle-a (~! resume '()) canvas loc dir painted)])))]
+    [('halt _)
+     (! <<v displayall 'num-ever-painted: 'o length 'o set->list 'o list->set painted '$)]))))
+
 (def-thunk (! main-a)
   [syn <- (! parse-intcode-program)]
   [len = 200]
   [len/2 <- (! / len 2)]
   [c <- (! mk-square-canvas len)]
   [origin <- (! mk-coord len/2 len/2)]
-  [driver = (~ (! a-driver c origin 'N '()))]
-  (! interp-intcode-program syn driver))
+  (! displayall 'hi)
+  (! handle-a (~! effcode syn) c origin 'N '()))
 
 (def/copat (! paint-color)
-  [((= 0)) (ret #\.)]
-  [((= 1)) (ret #\#)])
+  [((= 0)) (ret #\space)]
+  [((= 1)) (ret #\*)])
 
 (def/copat (! b-driver canvas loc dir)
   [((= 'input) k)
@@ -81,6 +99,22 @@
   [((= 'halt))
    (! canvas 'paint paint-color)])
 
+(def-thunk (! handle-b t canvas loc dir)
+  (! shallow-handle t error (~ (copat
+  [((= 'input) resume)
+   [color <- (! canvas 'read loc)]
+   (! handle-b (~! resume color) canvas loc dir)]
+  [((list (= 'output) color) resume)
+   (! canvas 'write loc color)
+   (! shallow-handle (~! resume '()) error (~ (copat
+   [((list 'output num-turn) resume)
+    [lr <- (! LR<-num num-turn)]
+    [dir <- (! turn dir lr)]
+    [loc <- (! <<v coord-add loc 'o vec<-dir dir '$)]
+    (! handle-b (~! resume '()) canvas loc dir)])))]
+  [('halt _)
+   (! canvas 'paint paint-color)]))))
+
 (def-thunk (! main-b)
   [syn <- (! parse-intcode-program)]
   [len = 80]
@@ -88,5 +122,6 @@
   [c <- (! mk-square-canvas len)]
   [origin <- (! mk-coord len/2 len/2)]
   (! c 'write origin 1)
-  [driver = (~ (! b-driver c origin 'N))]
-  (! cl-foreach displayall (~ (! interp-intcode-program syn driver))))
+  (! cl-foreach displayall (~! handle-b (~! effcode syn) c origin 'N)))
+
+     
