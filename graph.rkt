@@ -6,26 +6,7 @@
 
 (provide topo-sort)
 
-;; An AdjTbl A B is a Table (list A B) Bool
 
-;; Table K (Table V Bool) -> K -> V -> Table K (Table V Bool)
-(def-thunk (! push-tbl t k v)
-  (! update~ t k (~! empty-table 'set v #t) (~! swap apply (list 'set v #t))))
-
-;; Table (list A B) Bool -> List (Table A (Listof B)) (Table B (Listof A))
-(def-thunk (! split-adjacency-tbl rel)
-  [init-tbl <- (! <<v table<-list 'o map (~! swap Cons empty-table) 'o set->list 'o list->set 'o apply append 'o map car 'o rel 'to-list)]
-  (! cl-foldr (~! <<v colist<-list 'o rel 'to-list)
-     (~ (copat [((cons (list l r) _) k l->rs r->ls)
-                [l->rs <- (! push-tbl l->rs l r)]
-                [r->ls <- (! push-tbl r->ls r l)]
-                (! k l->rs r->ls)]))
-     (~ (λ (l->rs r->ls) (! map (~! swap map-vals (~! <<v map car 'o swap apply '(to-list))) (list l->rs r->ls))))
-     init-tbl
-     init-tbl)
-  
-  
-  )
 
 ;; The initial frontier is all the vertices with no antecedents
 (def-thunk (! initial-frontier ante->succs)
@@ -58,10 +39,21 @@
          [sorted <- (! Cons next sorted)]
          (! Kahn sorted frontier ante->succs succ->antes)]))
 
+;; Table (list A B) Bool -> List (Table A (Listof B)) (Table B (Listof A))
+(def-thunk (! split-adjacency-tbl^ rel)
+  [init-tbl <- (! <<v table<-list 'o map (~! swap Cons empty-table) 'o set->list 'o list->set 'o apply append 'o map car 'o rel 'to-list)]
+  (! cl-foldr (~! <<v colist<-list 'o rel 'to-list)
+     (~ (copat [((cons (list l r) _) k l->rs r->ls)
+                [l->rs <- (! push-tbl l->rs l r)]
+                [r->ls <- (! push-tbl r->ls r l)]
+                (! k l->rs r->ls)]))
+     (~ (λ (l->rs r->ls) (! map (~! swap map-vals (~! <<v map car 'o swap apply '(to-list))) (list l->rs r->ls))))
+     init-tbl
+     init-tbl))
 
 ;; U(TblSet (List V V)) -> F (Listof V)
 (def-thunk (! topo-sort adj)
-  (patc (! split-adjacency-tbl adj)
+  (patc (! split-adjacency-tbl^ adj)
         [(list ante->succs succ->antes)
          [frontier <- (! initial-frontier ante->succs)]
          (! Kahn '() frontier succ->antes ante->succs)]))
