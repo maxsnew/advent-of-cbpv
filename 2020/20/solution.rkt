@@ -140,6 +140,34 @@
   (! foldl corners * 1 ))
 ;; (define! l->rs (! main-a "sample"))
 
+(def/copat (! add-rot)
+  [(0 theta) (ret theta)]
+  [(theta 0) (ret theta)]
+  [('pi 'pi) (ret 0)]
+  [('pi 'pi/2) (ret 'minus-pi/2)]
+  [('pi 'minus-pi/2) (ret 'pi/2)]
+  [(theta 'pi) (! add-rot 'pi theta)]
+  [('pi/2 'pi/2) (ret 'pi)]
+  [('pi/2 'minus-pi/2) (ret 0)]
+  [('minus-pi/2 'minus-pi/2) (ret 'pi)]
+  [('minus-pi/2 'pi/2) (ret 0)])
+
+(def/copat (! add-flips)
+  [('r f) (ret f)]
+  [(f 'r) (ret f)]
+  [('l 'l) (ret 'r)])
+
+(def-thunk (! add-orientation (list theta1 flip1) (list theta2 flip2))
+  [theta <- (! add-rot theta1 theta2)]
+  [flip <- (! add-flips flip1 flip2)]
+  (ret (list theta flip)))
+
+(def-thunk (! right-handed-corner? (list top-rot top-flip) (list right-rot right-flip))
+  (! and (~! <<v not 'o equal? top-flip right-flip)
+         (~! <<v equal? top-rot 'o add-rot 'minus-pi/2 right-rot)))
+(def-thunk (! fill-in-rows)
+  (! error 'nyi))
+
 (def-thunk (! solve-puzzle f)
   [id-lines <- (! list<-colist (~! parse f))]
   ;; (! displayall id-lines)
@@ -152,9 +180,18 @@
   [right-edge-ids <-  (! <<v table-set<-list 'o map first oriented-right-edges)]
   [corners <- (! <<v map first 'o swap $ 'to-list 'o table-set-intersect top-edge-ids right-edge-ids)]
   (! <<v displayall 'corners: corners)
-  [disoriented-top-left <- (! first corners)]
-  (! displayall 'oriented: oriented-top-edges)
-  (ret disoriented-top-left))
+
+  [bot-right-id <- (! first corners)]
+  [br-tops <- (! <<v first 'o map second 'o filter (~! <<v equal? bot-right-id 'o first) oriented-top-edges)]
+  [br-rights <- (! <<v first 'o map second 'o filter (~! <<v equal? bot-right-id 'o first) oriented-right-edges)]
+  [rot <- (! <<v add-rot 'pi 'o first br-tops)]
+  [flip <- (cond [(! <<v equal? 'pi/2 'o first br-rights) (ret 'l)]
+                 [else                                    (ret 'r)])]
+
+  ;; this is the orientation of bot-right-id to make it the bottom right tile
+  [bot-right <- (! list bot-right-id (list rot flip))]
+  [id-tbl <- (! table<-list id-lines)]
+  (! fill-in-rows id-tbl top-side->pieces bot-right '()))
 
 (def-thunk (! main-b f)
   (! error 'nyi)
