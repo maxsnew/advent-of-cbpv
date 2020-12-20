@@ -55,6 +55,8 @@
    (! idiom^ (~! List 'alt cs) (~! set-cons e es))]
   [(e1 e2) (! idiom^ (~! List 'alt) (~! list->set '()) (~! list->set (list e1 e2)))])
 
+(define empty/e 'empty)
+(define epsilon/e 'epsilon)
 (def-thunk (! alt/e (rest es))
   (! foldl es alt2 'empty))
 
@@ -105,6 +107,71 @@
   [((list 'star e))
    (! idiom^ cat2 (~! Deriv c e) (~ (ret (list 'star e))))])
 
+(require fiddle/stdlib/Eff)
+
+(define null-accepting?E
+  (~! memo-fixE 'null-accepting (~ (λ (null-accepting?E)
+  (copat
+   [('empty)   (! retE #f)]
+   [('epsilon) (! retE #t)]
+   [((list 'alt cs es))
+    [es <- (! set->list es)]
+    (! mapE (~! <<n any? 'o colist<-list) (~! map-listE null-accepting?E es))]
+   [((cons 'cat es))
+    [es <- (! set->list es)]
+    (! mapE (~! <<n all? 'o colist<-list) (~! map-listE null-accepting?E es))]
+   [((list 'star e)) (! retE #t)])))))
+
+(def-thunk (! intersect-epsilonE e)
+  (! bindE (~! null-accepting?E e)
+     (~ (copat
+         [(#t) (! retE 'epsilon)]
+         [(#f) (! retE 'empty)]))))
+
+(define DerivE
+  (~! memo-fixE 'deriv (~ (λ (DerivE)
+  (λ (c r)
+    (pat r
+     ['empty   (! retE 'empty)]
+     ['epsilon (! retE 'empty)]
+     [(list 'alt cs es)
+      [cs-deriv <- (cond [(! member? c (~! colist<-set cs)) (ret 'epsilon)]
+                         [else                              (ret 'empty)])]
+      [es <- (! set->list es)]
+      (! mapE (~! apply (~! alt/e cs-deriv))
+         (~! map-listE (~! DerivE c) es))]
+     [(cons 'cat (cons e es))
+      [cat-es <- (pat es [(list e^) (ret e^)] [es (ret (cons 'cat es))])]
+      (! mapE alt2
+         (~! mapE (~! swap cat2 cat-es) (~! DerivE c e))
+         (~! mapE cat2 (~! intersect-epsilonE e) (~! DerivE c cat-es)))]
+     [(list 'star e)
+      (! mapE (~! swap cat2 (list 'star e)) (~! DerivE c e))]))))))
+
+(def-thunk (! stateful-Deriv nully-tbl deriv-tbl c r)
+  (! handle (~! DerivE c r)
+     (~ (λ (dr/dc nully-tbl deriv-tbl) (ret (list dr/dc nully-tbl deriv-tbl))))
+     (~ (copat
+         [((list 'lookup 'deriv (list c r)) resume nully-tbl deriv-tbl)
+          (cond [(! deriv-tbl 'has-key? (list r c))
+                 [dr/dc <- (! deriv-tbl 'get (list r c) 'unknown)]
+                 (! resume (list 'known dr/dc) nully-tbl deriv-tbl)]
+                [else (! resume 'unknown nully-tbl deriv-tbl)])]
+         [((list 'save 'deriv (list c r) dr/dc) resume nully-tbl deriv-tbl)
+          [deriv-tbl <- (! deriv-tbl 'set (list r c) dr/dc)]
+          (! resume '() nully-tbl deriv-tbl)]
+         [((list 'lookup 'null-accepting (list r)) resume nully-tbl)
+          (cond [(! nully-tbl 'has-key? r)
+                 [b <- (! nully-tbl 'get r 'wtf)]
+                 (! resume (list 'known b) nully-tbl)]
+                [else (! resume 'unknown nully-tbl)])]
+         [((list 'save 'null-accepting (list r) b) resume nully-tbl)
+          [nully-tbl <- (! nully-tbl 'set r b)]
+          (! resume '() nully-tbl)]
+         [(op resume nully-tbl deriv-tbl)
+          (! error "unknown operation:" op)]))
+     nully-tbl deriv-tbl))
+
 (def-thunk (! num<-digits base ds)
   (! cl-foldl (~! colist<-list ds)
      (~ (copat [(acc x)
@@ -124,7 +191,9 @@
   [(e '()) (! null-accepting? e)]
   [(e (cons c cs))
    [de/dc <- (! Deriv c e)]
-   (! matches? de/dc cs)])
+   (cond [(! equal? 'empty de/dc) (ret #f)]
+         [else (! matches? de/dc cs)])])
+(define uncompiled-regex-matches? matches?)
 
 ;; compute the support of the expression on the alphabet
 (def/copat (! support)
@@ -154,6 +223,35 @@
    [new-null? <- (! null-accepting? new)]
    [tbl <- (! tbl 'set new (list new-null? new-table))]
    (! cr-loop support tbl new-es)])
+
+(def-thunk (! null-accepting-state? st trans)
+  (cond [(! number? st) (! <<v first 'o vector-ref trans st)]
+        [else           (! null-accepting? st)]))
+
+(def-thunk (! lcr-matches? nully-tbl deriv-tbl regex)
+  (cond [(! equal? regex 'empty) (! abort (list #f (list  nully-tbl deriv-tbl)))]
+        [else
+         (copat
+          [('())
+           (cond [(! nully-tbl 'has-key? regex)
+                  [b <- (! nully-tbl 'get regex #f)]
+                  (ret (list b (list nully-tbl deriv-tbl)))]
+                 [else
+                  [b <- (! null-accepting? regex)]
+                  [nully-tbl <- (! nully-tbl 'set regex b)]
+                  (ret (list b (list nully-tbl deriv-tbl)))])]
+          [((cons c cs))
+           (patc (! stateful-Deriv nully-tbl deriv-tbl c regex)
+                 [(list dr/dc nully-tbl deriv-tbl)
+                  (! lcr-matches? nully-tbl deriv-tbl dr/dc cs)])])]))
+
+(def-thunk (! lazy-compiling-regex-matches? regex chars)
+  (! <<v first 'o lcr-matches? empty-table empty-table regex chars))
+
+(define init-lcr-state (list empty-table empty-table))
+
+(def-thunk (! stateful-lazy-compiling-regex-matches? (list nully-tbl deriv-tbl) regex chars)
+  (! lcr-matches? nully-tbl deriv-tbl regex chars))
 
 ;; A DFA is a pair of Number and DFATable
 ;; A DFATable is a Vector (List Bool (Table Char Regex))
@@ -219,13 +317,15 @@
   (do [st <- (! first dfa)]
       (! = st -1)))
 
-#;
+
 (def/copat (! dfa-matches? dfa)
   [('()) (! dfa-accepts-null? dfa)]
   [((cons c cs))
    [ddfa/dc <- (! dfa-Deriv c dfa)]
    (cond [(! empty-dfa? ddfa/dc) (ret #f)]
          [else (! dfa-matches? ddfa/dc cs)])])
+(define regex-matches? dfa-matches?)
+
 
 (def-thunk (! long-match-loop accept dfa full-buf failK since-buf cs)
   (patc (! idiom^ view cs)
@@ -405,6 +505,7 @@
 
 (provide
  ;; regex stuff
+ epsilon/e empty/e 
  cat/e alt/e
  char/e
  star/e */e
@@ -415,6 +516,11 @@
  exact-string/e
 
  compile-regex
+ regex-matches?
+ uncompiled-regex-matches?
+ lazy-compiling-regex-matches?
+ stateful-lazy-compiling-regex-matches?
+ init-lcr-state
 
  ;; lexing stuff
  lex fold-lex
