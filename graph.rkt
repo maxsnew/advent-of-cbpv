@@ -47,7 +47,7 @@
                 [l->rs <- (! push-tbl l->rs l r)]
                 [r->ls <- (! push-tbl r->ls r l)]
                 (! k l->rs r->ls)]))
-     (~ (λ (l->rs r->ls) (! map (~! swap map-vals (~! <<v map car 'o swap apply '(to-list))) (list l->rs r->ls))))
+     (~ (λ (l->rs r->ls) (! map (~! map-vals (~! <<v map car 'o swap apply '(to-list))) (list l->rs r->ls))))
      init-tbl
      init-tbl))
 
