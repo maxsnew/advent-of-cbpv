@@ -8,7 +8,6 @@
          "../../regex.rkt"
          )
 
-
 (define! tile/lex (! exact-string/lex "Tile"))
 (define! space/lex (! char/lex ": " (~! abort 'space)))
 (define! newline/lex (! char/lex "\n" (~! abort 'newline)))
@@ -25,13 +24,13 @@
      % n> (~! cl-map (~ (copat [((cons (list id) lines)) (ret (cons id lines))])))
      % n$))
 
-;; Dihedral group of order 4 describes the symmetries of a non-square rectangle.
+;; Dihedral group of order 8 describes the symmetries of a square
 ;
-;; Normal forms are a pair of a rotation (2 possible) and whether or not it's flipped (2 possible)
+;; Normal forms are a pair of a rotation (4 possible) and whether or not it's flipped (2 possible)
 
 ;; two generators: a is rotate pi radians, b is flip across y axis
 ;
-;; rotations: 0, 'pi
+;; rotations: 0, 'pi, 'pi/2, 'minus-pi/2
 ;; flipped:   'r, 'l
 
 ;; Plan: Greedy solution (check if it will work first)
@@ -51,51 +50,111 @@
 
 ;; How to represent the puzzle?
 
-;; A RawPiece is an ID Listof 
-
-;; A Piece consists of
-;;   - A bitmap
-;;   - top edge
-;;   - bottom edge
-;;   - left edge
-;;   - right edge
-
 ;; An Orientation consists of
 ;;   - a rotation in 0, pi/2, pi, minus-pi/2
 ;;   - a handedness in r or l
 
-;; An OrientedPiece is a Orientation * Piece
+;; Interpreted geometrically, this is interpreted as
+;; Flip about the y axis if it's 'l, then rotate by the angle
 
+;; An OrientedPiece is a Orientation * Piece
 ;
 ;; A Puzzle consists of
 ;;   - piece-at : Table Pt OrientedPiece
 ;;   - frontier : Listof Pt
 
+(def/copat (! invert-rot)
+  [('pi/2) (ret 'minus-pi/2)]
+  [('minus-pi/2) (ret 'pi/2)]
+  [(theta) (ret theta)])
+
+(def/copat (! add-rot)
+  [(0 theta) (ret theta)]
+  [(theta 0) (ret theta)]
+  [('pi 'pi) (ret 0)]
+  [('pi 'pi/2) (ret 'minus-pi/2)]
+  [('pi 'minus-pi/2) (ret 'pi/2)]
+  [(theta 'pi) (! add-rot 'pi theta)]
+  [('pi/2 'pi/2) (ret 'pi)]
+  [('pi/2 'minus-pi/2) (ret 0)]
+  [('minus-pi/2 'minus-pi/2) (ret 'pi)]
+  [('minus-pi/2 'pi/2) (ret 0)])
+
+(def/copat (! add-flips)
+  [('r f) (ret f)]
+  [(f 'r) (ret f)]
+  [('l 'l) (ret 'r)])
+
+(def-thunk (! flip-rot f theta)
+  (pat f 
+    ['l (! invert-rot theta)]
+    ['r (ret theta)]))
+
+;; First apply the right symmetry and then the left
+;; The flip anti-commutes with rotations
+;; l theta = -theta l
+(def-thunk (! add-orientation (list theta1 flip1) (list theta2 flip2))
+  [theta2 <- (! flip-rot flip1 theta2)]
+  [theta <- (! add-rot theta1 theta2)]
+  [flip <- (! add-flips flip1 flip2)]
+  (ret (list theta flip)))
+
+(def/copat (! top-edge field)
+  [((list 0 f))
+   [edge <- (! first field)]
+   (pat f
+        ['r (ret edge)]
+        ['l (! reverse edge)])]
+  [((list 'pi f))
+   [edge <- (! last field)]
+   (pat f
+        ['l (ret edge)]
+        ['r (! reverse edge)])]
+  [((list 'pi/2 'r)) (! map last field)]
+  [((list 'pi/2 'l)) (! map first field)]
+  [((list 'minus-pi/2 'r)) (! <<v reverse 'o map first field)]
+  [((list 'minus-pi/2 'l)) (! <<v reverse 'o map last field)])
+
+
+(def-thunk (! orient-piece o (list id o-id))
+  [o <- (! add-orientation o o-id)]
+  (ret (list id o)))
+
+(def/copat (! flip-list)
+  [('r) (! Ret)]
+  [('l) (! reverse)])
+
+
+(def-thunk (! multi-map f xss)
+  [xss~ <- (! map (~ (λ (xs) (ret (~! colist<-list xs)))) xss)]
+  (! list<-colist (~! apply (~! cl-map f) xss~)))
+
+(def-thunk (! cols rows) (! multi-map List rows))
+
+;; Orientation -> Listof (Listof String) -> Listof (Listof String)
+(def-thunk (! orient-rows o rows)
+  (pat o
+   [(list 0 'r)                            (ret rows)]
+   [(list 0 'l)                  (! map reverse rows)]
+   [(list 'pi 'r) (! <<v map reverse 'o reverse rows)]
+   [(list 'pi 'l)                    (! reverse rows)]
+
+   [(list 'pi/2 'l)                                     (! cols rows)]
+   [(list 'minus-pi/2 'r)            (! <<v map reverse 'o cols rows)]
+   [(list 'pi/2 'r)                      (! <<v reverse 'o cols rows)]
+   [(list 'minus-pi/2 'l) (! <<v map reverse 'o reverse 'o cols rows)]))
+
+(define! all-orientations
+  (! list<-colist (~! cartesian-product
+                      (~! colist<-list (list 0 'pi/2 'pi 'minus-pi/2))
+                      (~! colist<-list (list 'r 'l)))))
+
 ;; Listof (Listof Sigil) -> Listof (List Top-Piece Orientation) 
 (def-thunk (! mk-edges lines)
-  [top <- (! first lines)]
-  [pot <- (! reverse top)]
-
-  [bot <- (! last lines)]
-  [tob <- (! reverse bot)]
-
-  [left <- (! map first lines)]
-  [tfel <- (! reverse left)]
-
-  [right <- (! map last lines)]
-  [thgir <- (! reverse right)]
-  
-  (ret (list (list top (list   0 'r))
-             (list pot (list   0 'l))
-
-             (list right (list 'pi/2 'r))
-             (list thgir (list 'pi/2 'l))
-
-             (list bot (list 'pi 'l))
-             (list tob (list 'pi 'r))
-
-             (list left (list 'minus-pi/2 'l))
-             (list tfel (list 'minus-pi/2 'r)))))
+  (! map (~ (λ (o)
+              (do [e <- (! top-edge lines o)]
+                  (ret (list e o)))))
+     all-orientations))
 
 (def-thunk (! fill-db db id oriented-edges)
   (! foldl oriented-edges 
@@ -140,36 +199,96 @@
   (! foldl corners * 1 ))
 ;; (define! l->rs (! main-a "sample"))
 
-(def/copat (! add-rot)
-  [(0 theta) (ret theta)]
-  [(theta 0) (ret theta)]
-  [('pi 'pi) (ret 0)]
-  [('pi 'pi/2) (ret 'minus-pi/2)]
-  [('pi 'minus-pi/2) (ret 'pi/2)]
-  [(theta 'pi) (! add-rot 'pi theta)]
-  [('pi/2 'pi/2) (ret 'pi)]
-  [('pi/2 'minus-pi/2) (ret 0)]
-  [('minus-pi/2 'minus-pi/2) (ret 'pi)]
-  [('minus-pi/2 'pi/2) (ret 0)])
-
-(def/copat (! add-flips)
-  [('r f) (ret f)]
-  [(f 'r) (ret f)]
-  [('l 'l) (ret 'r)])
-
-(def-thunk (! add-orientation (list theta1 flip1) (list theta2 flip2))
-  [theta <- (! add-rot theta1 theta2)]
-  [flip <- (! add-flips flip1 flip2)]
-  (ret (list theta flip)))
-
 (def-thunk (! right-handed-corner? (list top-rot top-flip) (list right-rot right-flip))
   (! and (~! <<v not 'o equal? top-flip right-flip)
          (~! <<v equal? top-rot 'o add-rot 'minus-pi/2 right-rot)))
-(def-thunk (! fill-in-rows)
-  (! error 'nyi))
+
+
+;; Table Id BitMap -> OrientedPiece -> Line
+(def-thunk (! lookup-top-edge id->field (list id o))
+  [field <- (! id->field 'get id #f)]
+  (! top-edge field o))
+
+(def-thunk (! lookup-left-edge id->field opiece)
+  [opiece <- (! orient-piece '(pi/2 l) opiece)]
+  (! lookup-top-edge id->field opiece))
+
+;; Table ID Field -> Table Line (Listof OrientedPiece) -> OrientedPiece -> OrientedPiece
+(def-thunk (! select-to-the-left id->field top-side->pieces right-piece)
+  ;; (! displayall 'looking-to-the-left-of right-piece)
+  [right-id <- (! first right-piece)]
+  [edge <- (! lookup-left-edge id->field right-piece)]
+  [next-edge <- (! <<v orient-piece (list 'minus-pi/2 'r) 'o first
+       'o (~! filter (~! <<v not 'o = right-id 'o first))
+       'o top-side->pieces 'get edge #f)]
+  (ret next-edge))
+
+(def-thunk (! select-above id->field top-side->pieces below-piece)
+  [diso-below-piece <- (! orient-piece '(pi/2 r) below-piece)]
+  [diso-above-piece <- (! select-to-the-left id->field top-side->pieces diso-below-piece)]
+  (! orient-piece '(minus-pi/2 r) diso-above-piece))
+
+;;
+;; We fill in the puzzle row by row, from bottom to top, each row from
+;; right to left.
+;
+;; 
+(def-thunk (! fill-in-rows id-tbl top-side->pieces side-length leftmost-piece cur-row col-num prev-rows row-num)
+  (cond [(! = col-num 1)
+         [cur-row = (cons leftmost-piece cur-row)]
+         [prev-rows = (cons cur-row prev-rows)]
+         (cond [(! = row-num 1) (ret prev-rows)]
+               [else
+                [row-num <- (! - row-num 1)]
+                [below-leftmost-piece <- (! last cur-row)]
+                [leftmost-piece <- (! select-above id-tbl top-side->pieces below-leftmost-piece)]
+                ;; (! displayall 'new-row-starting-with: leftmost-piece)
+                (! fill-in-rows id-tbl top-side->pieces side-length leftmost-piece '() side-length prev-rows row-num)])]
+        [else
+         [col-num <- (! - col-num 1)]
+         [cur-row = (cons leftmost-piece cur-row)]
+         [next-piece <- (! select-to-the-left id-tbl top-side->pieces leftmost-piece)]
+         ;; (! displayall 'next-piece: next-piece)
+         (! fill-in-rows id-tbl top-side->pieces side-length next-piece cur-row col-num prev-rows row-num)]))
+
+;; Table -> OrientedPiece -> Listof (Listof 1String)
+(def-thunk (! orient-opiece id->piece (list id o))
+  [field <- (! id->piece 'get id #f)]
+  (! orient-rows o field))
+
+(def-thunk (! middle xs)
+  (! <<v rest 'o reverse 'o rest 'o reverse xs))
+
+(def-thunk (! trim rows)
+  (! <<v middle 'o map middle rows))
+
+;; Listof (Listof String) -> Listof String
+(def-thunk (! append-fields fields)
+  (! multi-map (~! string-append) fields))
+
+;; Table ID Field -> Listof (Listof OrientedPiece) -> String
+(def-thunk (! string<-solved id->piece id-puzzle)
+  ;; : Listof (Listof (Listof String)) ~ Rows (PieceFields)
+  [piece-fields <- (! map (~! map (~! <<v trim 'o orient-opiece id->piece)) id-puzzle)]
+
+  (! <<v
+     apply string-append 'o
+     map (~! apply string-append) 'o
+     map (~! swap append '("\n")) 'o
+     apply append 'o map (~! multi-map append) piece-fields)
+  #;
+  (! <<v
+     ;;append-fields 'o
+
+      ;; map (~! apply string-append) 'o
+     ;; Rows (Listof Line)
+     map append-fields piece-fields)
+  )
 
 (def-thunk (! solve-puzzle f)
   [id-lines <- (! list<-colist (~! parse f))]
+  [side-len <- (! <<v swap expt 1/2 'o length id-lines)]
+  ;; (! displayall 'length: side-len)
   ;; (! displayall id-lines)
   [tops <- (! mk-edge-db id-lines)]
   [top-side->pieces <- (! <<v first 'o split-adjacency-tbl tops)]
@@ -179,19 +298,29 @@
   [oriented-right-edges <- (! find-edges '(pi/2 minus-pi/2) top-side->pieces)]
   [right-edge-ids <-  (! <<v table-set<-list 'o map first oriented-right-edges)]
   [corners <- (! <<v map first 'o swap $ 'to-list 'o table-set-intersect top-edge-ids right-edge-ids)]
-  (! <<v displayall 'corners: corners)
 
   [bot-right-id <- (! first corners)]
-  [br-tops <- (! <<v first 'o map second 'o filter (~! <<v equal? bot-right-id 'o first) oriented-top-edges)]
-  [br-rights <- (! <<v first 'o map second 'o filter (~! <<v equal? bot-right-id 'o first) oriented-right-edges)]
-  [rot <- (! <<v add-rot 'pi 'o first br-tops)]
-  [flip <- (cond [(! <<v equal? 'pi/2 'o first br-rights) (ret 'l)]
-                 [else                                    (ret 'r)])]
+  [br-tops <- (! <<v first 'o map second 'o
+                 filter (~! <<v equal? 'r 'o second 'o second) 'o
+                 filter (~! <<v equal? bot-right-id 'o first) oriented-top-edges)]
+  [br-rights <- (! <<v first 'o map second 'o
+                   filter (~! <<v equal? 'pi/2 'o first 'o second) 'o
+                   filter (~! <<v equal? bot-right-id 'o first) oriented-right-edges)]
+
+  [top-rot <- (! first br-tops)]
+  [side-flip <- (! second br-rights)]
+  [br-o <- (pat (list top-rot side-flip)
+                [(list 0 'r) (ret (list 'pi 'l))]
+                [(list 0 'l) (ret (list 'pi 'r))]
+                [(list 'pi 'l) (ret (list 0 'l))]
+                [(list 'pi 'r) (ret (list 'pi 'r))])]
 
   ;; this is the orientation of bot-right-id to make it the bottom right tile
-  [bot-right <- (! list bot-right-id (list rot flip))]
+  [bot-right = (list bot-right-id br-o)]
   [id-tbl <- (! table<-list id-lines)]
-  (! fill-in-rows id-tbl top-side->pieces bot-right '()))
+  [solved <- (! fill-in-rows id-tbl top-side->pieces side-len bot-right '() side-len '() side-len)]
+  [solved-field <- (! string<-solved id-tbl solved)]
+  (ret solved-field))
 
 (def-thunk (! main-b f)
   (! error 'nyi)
