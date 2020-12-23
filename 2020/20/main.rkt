@@ -1,7 +1,8 @@
 #lang fiddle
 (require fiddle/prelude
          fiddle/stdlib/IO
-         "solution.rkt")
+         "solution.rkt"
+         "b.rkt")
 
 (! apply/cmd-line
    (~ (copat [("a" f #:bind) (! idiom^ (~! displayall 'answer:) (~! main-a f))]
